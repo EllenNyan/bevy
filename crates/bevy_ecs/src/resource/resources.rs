@@ -33,7 +33,7 @@ trait ResourceStorage: Downcast {}
 impl_downcast!(ResourceStorage);
 
 struct StoredResource<T: 'static> {
-    value: T,
+    value: std::cell::UnsafeCell<T>,
     atomic_borrow: AtomicBorrow,
 }
 
@@ -45,27 +45,26 @@ impl<T: 'static> VecResourceStorage<T> {
     fn get(&self, index: usize) -> Option<ResourceRef<'_, T>> {
         self.stored
             .get(index)
-            .map(|stored| ResourceRef::new(&stored.value, &stored.atomic_borrow))
+            .map(|stored| ResourceRef::new(unsafe { &*stored.value.get() }, &stored.atomic_borrow))
     }
 
     fn get_mut(&self, index: usize) -> Option<ResourceRefMut<'_, T>> {
-        self.stored.get(index).map(|stored|
+        self.stored.get(index).map(|stored| {
             // SAFE: ResourceRefMut ensures that this borrow is unique
-            unsafe {
-                let value = &stored.value as *const T as *mut T;
-                ResourceRefMut::new(&mut *value, &stored.atomic_borrow)
-            })
+            let value = unsafe { &mut *stored.value.get() };
+            ResourceRefMut::new(&mut *value, &stored.atomic_borrow)
+        })
     }
 
     fn push(&mut self, resource: T) {
         self.stored.push(StoredResource {
             atomic_borrow: AtomicBorrow::new(),
-            value: resource,
+            value: std::cell::UnsafeCell::new(resource),
         })
     }
 
     fn set(&mut self, index: usize, resource: T) {
-        self.stored[index].value = resource;
+        self.stored[index].value = std::cell::UnsafeCell::new(resource);
     }
 
     fn is_empty(&self) -> bool {

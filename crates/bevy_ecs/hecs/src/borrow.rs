@@ -33,6 +33,7 @@ impl AtomicBorrow {
     }
 
     /// Starts a new immutable borrow. This can be called any number of times
+    #[must_use]
     pub fn borrow(&self) -> bool {
         let value = self.0.fetch_add(1, Ordering::Acquire).wrapping_add(1);
         if value == 0 {
@@ -48,6 +49,7 @@ impl AtomicBorrow {
     }
 
     /// Starts a new mutable borrow. This must be unique. It cannot be done in parallel with other borrows or borrow_muts
+    #[must_use]
     pub fn borrow_mut(&self) -> bool {
         self.0
             .compare_exchange(0, UNIQUE_BIT, Ordering::Acquire, Ordering::Relaxed)

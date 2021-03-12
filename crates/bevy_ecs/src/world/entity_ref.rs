@@ -530,8 +530,10 @@ unsafe fn get_component(
 ) -> Option<*mut u8> {
     let archetype = world.archetypes.get_unchecked(location.archetype_id);
     // SAFE: component_id exists and is therefore valid
-    let component_info = world.components.get_info_unchecked(component_id);
-    match component_info.storage_type() {
+    let component_info = world
+        .components
+        .get_relationship_info_unchecked(component_id);
+    match component_info.get_component_descriptor().storage_type() {
         StorageType::Table => {
             // SAFE: tables stored in archetype always exist
             let table = world.storages.tables.get_unchecked(archetype.table_id());
@@ -558,8 +560,10 @@ unsafe fn get_component_and_flags(
     location: EntityLocation,
 ) -> Option<(*mut u8, *mut ComponentFlags)> {
     let archetype = world.archetypes.get_unchecked(location.archetype_id);
-    let component_info = world.components.get_info_unchecked(component_id);
-    match component_info.storage_type() {
+    let component_info = world
+        .components
+        .get_relationship_info_unchecked(component_id);
+    match component_info.get_component_descriptor().storage_type() {
         StorageType::Table => {
             // SAFE: tables stored in archetype always exist
             let table = world.storages.tables.get_unchecked(archetype.table_id());
@@ -585,7 +589,7 @@ unsafe fn get_component_and_flags(
 /// `component_id` must be valid
 #[inline]
 unsafe fn remove_component(
-    components: &Components,
+    relationships: &Components,
     storages: &mut Storages,
     archetype: &Archetype,
     removed_components: &mut SparseSet<ComponentId, Vec<Entity>>,
@@ -593,10 +597,10 @@ unsafe fn remove_component(
     entity: Entity,
     location: EntityLocation,
 ) -> *mut u8 {
-    let component_info = components.get_info_unchecked(component_id);
+    let component_info = relationships.get_relationship_info_unchecked(component_id);
     let removed_components = removed_components.get_or_insert_with(component_id, Vec::new);
     removed_components.push(entity);
-    match component_info.storage_type() {
+    match component_info.get_component_descriptor().storage_type() {
         StorageType::Table => {
             // SAFE: tables stored in archetype always exist
             let table = storages.tables.get_unchecked(archetype.table_id());
@@ -623,7 +627,7 @@ unsafe fn get_component_with_type(
     entity: Entity,
     location: EntityLocation,
 ) -> Option<*mut u8> {
-    let component_id = world.components.get_id(type_id)?;
+    let component_id = world.components.get_component_id(type_id)?;
     get_component(world, component_id, entity, location)
 }
 
@@ -635,7 +639,7 @@ pub(crate) unsafe fn get_component_and_flags_with_type(
     entity: Entity,
     location: EntityLocation,
 ) -> Option<(*mut u8, *mut ComponentFlags)> {
-    let component_id = world.components.get_id(type_id)?;
+    let component_id = world.components.get_component_id(type_id)?;
     get_component_and_flags(world, component_id, entity, location)
 }
 
@@ -646,7 +650,7 @@ unsafe fn contains_component_with_type(
     type_id: TypeId,
     location: EntityLocation,
 ) -> bool {
-    if let Some(component_id) = world.components.get_id(type_id) {
+    if let Some(component_id) = world.components.get_component_id(type_id) {
         contains_component_with_id(world, component_id, location)
     } else {
         false
@@ -695,8 +699,8 @@ pub(crate) unsafe fn add_bundle_to_archetype(
             tracking_flags.push(ComponentFlags::MUTATED);
         } else {
             tracking_flags.push(ComponentFlags::ADDED);
-            let component_info = components.get_info_unchecked(component_id);
-            match component_info.storage_type() {
+            let component_info = components.get_relationship_info_unchecked(component_id);
+            match component_info.get_component_descriptor().storage_type() {
                 StorageType::Table => new_table_components.push(component_id),
                 StorageType::SparseSet => {
                     storages.sparse_sets.get_or_insert(component_info);
@@ -802,8 +806,8 @@ unsafe fn remove_bundle_from_archetype(
             for component_id in bundle_info.component_ids.iter().cloned() {
                 if current_archetype.contains(component_id) {
                     // SAFE: bundle components were already initialized by bundles.get_info
-                    let component_info = components.get_info_unchecked(component_id);
-                    match component_info.storage_type() {
+                    let component_info = components.get_relationship_info_unchecked(component_id);
+                    match component_info.get_component_descriptor().storage_type() {
                         StorageType::Table => removed_table_components.push(component_id),
                         StorageType::SparseSet => removed_sparse_set_components.push(component_id),
                     }

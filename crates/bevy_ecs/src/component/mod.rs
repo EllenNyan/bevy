@@ -2,6 +2,8 @@ mod type_info;
 
 pub use type_info::*;
 
+use std::collections::HashMap;
+
 use crate::storage::SparseSetIndex;
 use bitflags::bitflags;
 use std::{
@@ -27,21 +29,26 @@ impl Default for StorageType {
 }
 
 #[derive(Debug)]
-pub struct ComponentInfo {
+pub struct ComponentDescriptor {
     name: String,
-    id: ComponentId,
-    type_id: Option<TypeId>,
+    storage_type: StorageType,
     // SAFETY: This must remain private. It must only be set to "true" if this component is actually Send + Sync
     is_send_and_sync: bool,
+    type_id: Option<TypeId>,
     layout: Layout,
     drop: unsafe fn(*mut u8),
-    storage_type: StorageType,
 }
 
-impl ComponentInfo {
-    #[inline]
-    pub fn id(&self) -> ComponentId {
-        self.id
+impl ComponentDescriptor {
+    pub fn new<T: Component>(storage_type: StorageType) -> Self {
+        Self {
+            name: std::any::type_name::<T>().to_string(),
+            storage_type,
+            is_send_and_sync: true,
+            type_id: Some(TypeId::of::<T>()),
+            layout: Layout::new::<T>(),
+            drop: TypeInfo::drop_ptr::<T>,
+        }
     }
 
     #[inline]
@@ -73,21 +80,22 @@ impl ComponentInfo {
     pub fn is_send_and_sync(&self) -> bool {
         self.is_send_and_sync
     }
+}
 
-    fn new(id: ComponentId, descriptor: ComponentDescriptor) -> Self {
-        ComponentInfo {
-            id,
-            name: descriptor.name,
-            storage_type: descriptor.storage_type,
-            type_id: descriptor.type_id,
-            is_send_and_sync: descriptor.is_send_and_sync,
-            drop: descriptor.drop,
-            layout: descriptor.layout,
+impl From<TypeInfo> for ComponentDescriptor {
+    fn from(type_info: TypeInfo) -> Self {
+        Self {
+            name: type_info.type_name().to_string(),
+            storage_type: StorageType::default(),
+            is_send_and_sync: type_info.is_send_and_sync(),
+            type_id: Some(type_info.type_id()),
+            drop: type_info.drop(),
+            layout: type_info.layout(),
         }
     }
 }
 
-#[derive(Debug, Copy, Clone, Hash, Ord, PartialOrd, Eq, PartialEq)]
+#[derive(Debug, Copy, Clone, Hash, Eq, PartialEq, Ord, PartialOrd)]
 pub struct ComponentId(usize);
 
 impl ComponentId {
@@ -113,99 +121,179 @@ impl SparseSetIndex for ComponentId {
     }
 }
 
-pub struct ComponentDescriptor {
-    name: String,
-    storage_type: StorageType,
-    // SAFETY: This must remain private. It must only be set to "true" if this component is actually Send + Sync
-    is_send_and_sync: bool,
-    type_id: Option<TypeId>,
-    layout: Layout,
-    drop: unsafe fn(*mut u8),
+pub mod default_relationship_kinds {
+    pub struct HasComponent;
+    pub struct HasResource;
 }
 
-impl ComponentDescriptor {
-    pub fn new<T: Component>(storage_type: StorageType) -> Self {
-        Self {
-            name: std::any::type_name::<T>().to_string(),
-            storage_type,
-            is_send_and_sync: true,
-            type_id: Some(TypeId::of::<T>()),
-            layout: Layout::new::<T>(),
-            drop: TypeInfo::drop_ptr::<T>,
-        }
-    }
+#[derive(Debug, Copy, Clone, Hash, Eq, PartialEq)]
+pub enum DummyIdOrEntity {
+    Entity(crate::entity::Entity),
+    DummyId(DummyId),
+}
 
-    #[inline]
-    pub fn storage_type(&self) -> StorageType {
-        self.storage_type
-    }
+#[derive(Debug, Copy, Clone, Hash, Eq, PartialEq)]
+pub struct Relationship {
+    kind: RelationshipKindId,
+    target: DummyIdOrEntity,
+}
 
-    #[inline]
-    pub fn type_id(&self) -> Option<TypeId> {
-        self.type_id
-    }
-
-    #[inline]
-    pub fn name(&self) -> &str {
-        &self.name
+impl Relationship {
+    pub fn new(kind: RelationshipKindId, target: DummyIdOrEntity) -> Self {
+        Self { kind, target }
     }
 }
 
-impl From<TypeInfo> for ComponentDescriptor {
-    fn from(type_info: TypeInfo) -> Self {
-        Self {
-            name: type_info.type_name().to_string(),
-            storage_type: StorageType::default(),
-            is_send_and_sync: type_info.is_send_and_sync(),
-            type_id: Some(type_info.type_id()),
-            drop: type_info.drop(),
-            layout: type_info.layout(),
-        }
+#[derive(Debug)]
+pub struct ComponentInfo {
+    id: ComponentId,
+    relationship: Relationship,
+    data: ComponentDescriptor,
+}
+
+impl ComponentInfo {
+    pub fn id(&self) -> ComponentId {
+        self.id
+    }
+
+    pub fn get_component_descriptor(&self) -> &ComponentDescriptor {
+        &self.data
     }
 }
 
-#[derive(Debug, Default)]
+#[derive(Debug, Copy, Clone, Hash, Eq, PartialEq)]
+pub struct RelationshipKindId(usize);
+#[derive(Debug, Copy, Clone, Hash, Eq, PartialEq)]
+pub struct RelationshipKindInfo {
+    id: RelationshipKindId,
+}
+
+#[derive(Debug, Copy, Clone, Hash, Eq, PartialEq)]
+pub struct DummyIdInfo {
+    static_type: Option<TypeId>,
+    id: DummyId,
+}
+#[derive(Debug, Copy, Clone, Hash, Eq, PartialEq)]
+pub struct DummyId(usize);
+
+#[derive(Debug)]
 pub struct Components {
     components: Vec<ComponentInfo>,
-    indices: std::collections::HashMap<TypeId, usize, fxhash::FxBuildHasher>,
-    resource_indices: std::collections::HashMap<TypeId, usize, fxhash::FxBuildHasher>,
+    component_indices: HashMap<Relationship, ComponentId, fxhash::FxBuildHasher>,
+
+    kinds: Vec<RelationshipKindInfo>,
+
+    dummy_infos: Vec<DummyIdInfo>,
+    // FIXME(Relationships) we use TypeId here because bevy needs to do this conversion *somewhere*
+    // scripting stuff can directly use ComponentId/RelationshipKindId somehow
+    typeid_to_component_id: HashMap<TypeId, DummyId, fxhash::FxBuildHasher>,
+    kind_indices: HashMap<TypeId, RelationshipKindId, fxhash::FxBuildHasher>,
+}
+
+impl Default for Components {
+    fn default() -> Self {
+        let mut this = Self {
+            components: Default::default(),
+            component_indices: Default::default(),
+
+            kinds: Default::default(),
+
+            dummy_infos: Default::default(),
+            typeid_to_component_id: Default::default(),
+            kind_indices: Default::default(),
+        };
+
+        this.new_relationship_kind(Some(
+            TypeId::of::<default_relationship_kinds::HasComponent>(),
+        ));
+        this.new_relationship_kind(Some(TypeId::of::<default_relationship_kinds::HasResource>()));
+
+        this
+    }
 }
 
 #[derive(Debug, Error)]
 pub enum ComponentsError {
     #[error("A component of type {0:?} already exists")]
-    ComponentAlreadyExists(TypeId),
+    ComponentAlreadyExists(Relationship),
 }
 
 impl Components {
-    pub(crate) fn add(
-        &mut self,
-        descriptor: ComponentDescriptor,
-    ) -> Result<ComponentId, ComponentsError> {
-        let index = self.components.len();
-        if let Some(type_id) = descriptor.type_id {
-            let index_entry = self.indices.entry(type_id);
-            if let Entry::Occupied(_) = index_entry {
-                return Err(ComponentsError::ComponentAlreadyExists(type_id));
-            }
-            self.indices.insert(type_id, index);
+    pub fn relkind_of_has_component(&self) -> RelationshipKindId {
+        self.kind_indices[&TypeId::of::<default_relationship_kinds::HasComponent>()]
+    }
+
+    pub fn relkind_of_has_resource(&self) -> RelationshipKindId {
+        self.kind_indices[&TypeId::of::<default_relationship_kinds::HasResource>()]
+    }
+
+    /// TypeId is used for bevy to map from relationship kind structs -> RelationshipKindId  
+    /// scripting/untyped use of this should pass in None
+    pub fn new_relationship_kind(&mut self, type_id: Option<TypeId>) -> RelationshipKindId {
+        let id = RelationshipKindId(self.kinds.len());
+
+        if let Some(type_id) = type_id {
+            let previously_inserted = self
+                .kind_indices
+                .insert(type_id, RelationshipKindId(self.kinds.len()));
+            assert!(previously_inserted.is_none());
         }
-        self.components
-            .push(ComponentInfo::new(ComponentId(index), descriptor));
 
-        Ok(ComponentId(index))
+        self.kinds.push(RelationshipKindInfo { id });
+        id
     }
 
-    #[inline]
-    pub fn get_or_insert_id<T: Component>(&mut self) -> ComponentId {
-        self.get_or_insert_with(TypeId::of::<T>(), TypeInfo::of::<T>)
+    /// TypeId is used by bevy to map from component type -> component id  
+    /// scripting/untyped use of this should pass in None  
+    pub(crate) fn new_component_id(&mut self, type_id: Option<TypeId>) -> DummyId {
+        let component_id = DummyId(self.dummy_infos.len());
+        self.dummy_infos.push(DummyIdInfo {
+            static_type: type_id,
+            id: component_id,
+        });
+
+        if let Some(type_id) = type_id {
+            let previously_inserted = self.typeid_to_component_id.insert(type_id, component_id);
+            assert!(previously_inserted.is_none());
+        }
+        component_id
     }
 
-    #[inline]
-    pub fn get_or_insert_info<T: Component>(&mut self) -> &ComponentInfo {
-        let id = self.get_or_insert_id::<T>();
-        // SAFE: component_info with the given `id` initialized above
-        unsafe { self.get_info_unchecked(id) }
+    pub(crate) fn type_id_to_component_id(&self, type_id: TypeId) -> Option<DummyId> {
+        self.typeid_to_component_id.get(&type_id).copied()
+    }
+
+    pub(crate) fn register_relationship(
+        &mut self,
+        relationship: Relationship,
+        comp_descriptor: ComponentDescriptor,
+    ) -> Result<&ComponentInfo, ComponentsError> {
+        let new_id = ComponentId(self.components.len());
+
+        if let Entry::Occupied(_) = self.component_indices.entry(relationship) {
+            return Err(ComponentsError::ComponentAlreadyExists(relationship));
+        }
+
+        if let Some(type_id) = comp_descriptor.type_id {
+            if let DummyIdOrEntity::DummyId(id) = relationship.target {
+                if let Some(stored_type_id) = self.dummy_infos[id.0].static_type {
+                    assert!(stored_type_id == type_id);
+                }
+
+                let component_id = self.typeid_to_component_id[&type_id];
+                assert!(DummyIdOrEntity::DummyId(component_id) == relationship.target);
+            }
+        }
+
+        self.component_indices.insert(relationship, new_id);
+        self.components.push(ComponentInfo {
+            id: new_id,
+            relationship,
+            data: comp_descriptor,
+        });
+
+        // Safety: Just inserted ^^^
+        unsafe { Ok(self.get_relationship_info_unchecked(new_id)) }
     }
 
     #[inline]
@@ -219,72 +307,115 @@ impl Components {
     }
 
     #[inline]
-    pub fn get_info(&self, id: ComponentId) -> Option<&ComponentInfo> {
-        self.components.get(id.0)
+    pub fn get_resource_id(&self, type_id: TypeId) -> Option<ComponentId> {
+        self.get_relationship_id(Relationship {
+            kind: self.relkind_of_has_resource(),
+            target: DummyIdOrEntity::DummyId(self.type_id_to_component_id(type_id)?),
+        })
+    }
+    #[inline]
+    pub fn get_resource_info_or_insert<T: Component>(&mut self) -> &ComponentInfo {
+        self.get_resource_info_or_insert_with(TypeId::of::<T>(), TypeInfo::of::<T>)
+    }
+    #[inline]
+    pub fn get_non_send_resource_info_or_insert<T: Any>(&mut self) -> &ComponentInfo {
+        self.get_resource_info_or_insert_with(
+            TypeId::of::<T>(),
+            TypeInfo::of_non_send_and_sync::<T>,
+        )
+    }
+    #[inline]
+    fn get_resource_info_or_insert_with(
+        &mut self,
+        type_id: TypeId,
+        data_layout: impl FnOnce() -> TypeInfo,
+    ) -> &ComponentInfo {
+        let component_id = match self.type_id_to_component_id(type_id) {
+            Some(id) => id,
+            None => self.new_component_id(Some(type_id)),
+        };
+
+        self.get_relationship_info_or_insert_with(
+            Relationship {
+                kind: self.relkind_of_has_resource(),
+                target: DummyIdOrEntity::DummyId(component_id),
+            },
+            data_layout,
+        )
     }
 
-    /// # Safety
-    /// `id` must be a valid [ComponentId]
     #[inline]
-    pub unsafe fn get_info_unchecked(&self, id: ComponentId) -> &ComponentInfo {
+    pub fn get_component_id(&self, type_id: TypeId) -> Option<ComponentId> {
+        self.get_relationship_id(Relationship {
+            kind: self.relkind_of_has_component(),
+            target: DummyIdOrEntity::DummyId(self.type_id_to_component_id(type_id)?),
+        })
+    }
+    #[inline]
+    pub fn get_component_info_or_insert<T: Component>(&mut self) -> &ComponentInfo {
+        self.get_component_info_or_insert_with(TypeId::of::<T>(), TypeInfo::of::<T>)
+    }
+    #[inline]
+    pub(crate) fn get_component_info_or_insert_with(
+        &mut self,
+        type_id: TypeId,
+        data_layout: impl FnOnce() -> TypeInfo,
+    ) -> &ComponentInfo {
+        let component_id = match self.type_id_to_component_id(type_id) {
+            Some(id) => id,
+            None => self.new_component_id(Some(type_id)),
+        };
+
+        self.get_relationship_info_or_insert_with(
+            Relationship {
+                kind: self.relkind_of_has_component(),
+                target: DummyIdOrEntity::DummyId(component_id),
+            },
+            data_layout,
+        )
+    }
+
+    #[inline]
+    pub fn get_relationship_id(&self, relationship: Relationship) -> Option<ComponentId> {
+        self.component_indices.get(&relationship).copied()
+    }
+    #[inline]
+    pub fn get_relationship_info(&self, id: ComponentId) -> Option<&ComponentInfo> {
+        self.components.get(id.0)
+    }
+    /// # Safety
+    /// `id` must be a valid [RelationshipId]
+    #[inline]
+    pub unsafe fn get_relationship_info_unchecked(&self, id: ComponentId) -> &ComponentInfo {
         debug_assert!(id.index() < self.components.len());
         self.components.get_unchecked(id.0)
     }
-
     #[inline]
-    pub fn get_id(&self, type_id: TypeId) -> Option<ComponentId> {
-        self.indices.get(&type_id).map(|index| ComponentId(*index))
-    }
-
-    #[inline]
-    pub fn get_resource_id(&self, type_id: TypeId) -> Option<ComponentId> {
-        self.resource_indices
-            .get(&type_id)
-            .map(|index| ComponentId(*index))
-    }
-
-    #[inline]
-    pub fn get_or_insert_resource_id<T: Component>(&mut self) -> ComponentId {
-        self.get_or_insert_resource_with(TypeId::of::<T>(), TypeInfo::of::<T>)
-    }
-
-    #[inline]
-    pub fn get_or_insert_non_send_resource_id<T: Any>(&mut self) -> ComponentId {
-        self.get_or_insert_resource_with(TypeId::of::<T>(), TypeInfo::of_non_send_and_sync::<T>)
-    }
-
-    #[inline]
-    fn get_or_insert_resource_with(
+    pub fn get_relationship_info_or_insert_with(
         &mut self,
-        type_id: TypeId,
-        func: impl FnOnce() -> TypeInfo,
-    ) -> ComponentId {
-        let components = &mut self.components;
-        let index = self.resource_indices.entry(type_id).or_insert_with(|| {
-            let type_info = func();
-            let index = components.len();
-            components.push(ComponentInfo::new(ComponentId(index), type_info.into()));
-            index
+        relationship: Relationship,
+        data_layout: impl FnOnce() -> TypeInfo,
+    ) -> &ComponentInfo {
+        let Components {
+            component_indices: relationship_indices,
+            components: relationships,
+            ..
+        } = self;
+
+        let id = *relationship_indices.entry(relationship).or_insert_with(|| {
+            let rel_id = ComponentId(relationships.len());
+
+            relationships.push(ComponentInfo {
+                id: rel_id,
+                relationship,
+                data: data_layout().into(),
+            });
+
+            rel_id
         });
 
-        ComponentId(*index)
-    }
-
-    #[inline]
-    pub(crate) fn get_or_insert_with(
-        &mut self,
-        type_id: TypeId,
-        func: impl FnOnce() -> TypeInfo,
-    ) -> ComponentId {
-        let components = &mut self.components;
-        let index = self.indices.entry(type_id).or_insert_with(|| {
-            let type_info = func();
-            let index = components.len();
-            components.push(ComponentInfo::new(ComponentId(index), type_info.into()));
-            index
-        });
-
-        ComponentId(*index)
+        // Safety: just inserted
+        unsafe { self.get_relationship_info_unchecked(id) }
     }
 }
 

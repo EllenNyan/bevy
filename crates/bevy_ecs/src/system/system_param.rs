@@ -125,6 +125,7 @@ fn assert_component_access_compatibility(
     system_name: &str,
     query_type: &'static str,
     filter_type: &'static str,
+    // FIXME(Relationships) is this right
     system_access: &FilteredAccessSet<ComponentId>,
     current: &FilteredAccess<ComponentId>,
     world: &World,
@@ -135,7 +136,14 @@ fn assert_component_access_compatibility(
     }
     let conflicting_components = conflicts
         .drain(..)
-        .map(|component_id| world.components.get_info(component_id).unwrap().name())
+        .map(|component_id| {
+            world
+                .components
+                .get_relationship_info(component_id)
+                .unwrap()
+                .get_component_descriptor()
+                .name()
+        })
         .collect::<Vec<&str>>();
     let accesses = conflicting_components.join(", ");
     panic!("Query<{}, {}> in system {} accesses component(s) {} in a way that conflicts with a previous system parameter. Allowing this would break Rust's mutability rules. Consider merging conflicting Queries into a QuerySet.",
@@ -510,7 +518,7 @@ unsafe impl<T: Component> SystemParamState for RemovedComponentsState<T> {
 
     fn init(world: &mut World, _system_state: &mut SystemState, _config: Self::Config) -> Self {
         Self {
-            component_id: world.components.get_or_insert_id::<T>(),
+            component_id: world.components.get_component_info_or_insert::<T>().id(),
             marker: PhantomData,
         }
     }
@@ -649,7 +657,10 @@ unsafe impl<T: 'static> SystemParamState for NonSendMutState<T> {
     fn init(world: &mut World, system_state: &mut SystemState, _config: Self::Config) -> Self {
         system_state.set_non_send();
 
-        let component_id = world.components.get_or_insert_non_send_resource_id::<T>();
+        let component_id = world
+            .components
+            .get_non_send_resource_info_or_insert::<T>()
+            .id();
         let combined_access = system_state.component_access_set.combined_access_mut();
         if combined_access.has_write(component_id) {
             panic!(

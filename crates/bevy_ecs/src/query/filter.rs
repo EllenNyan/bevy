@@ -68,10 +68,10 @@ pub struct WithState<T> {
 // SAFE: no component access or archetype component access
 unsafe impl<T: Component> FetchState for WithState<T> {
     fn init(world: &mut World) -> Self {
-        let component_info = world.components.get_or_insert_info::<T>();
+        let component_info = world.components.get_component_info_or_insert::<T>();
         Self {
             component_id: component_info.id(),
-            storage_type: component_info.storage_type(),
+            storage_type: component_info.get_component_descriptor().storage_type(),
             marker: PhantomData,
         }
     }
@@ -159,10 +159,10 @@ pub struct WithoutState<T> {
 // SAFE: no component access or archetype component access
 unsafe impl<T: Component> FetchState for WithoutState<T> {
     fn init(world: &mut World) -> Self {
-        let component_info = world.components.get_or_insert_info::<T>();
+        let component_info = world.components.get_component_info_or_insert::<T>();
         Self {
             component_id: component_info.id(),
-            storage_type: component_info.storage_type(),
+            storage_type: component_info.get_component_descriptor().storage_type(),
             marker: PhantomData,
         }
     }
@@ -249,7 +249,11 @@ unsafe impl<T: Bundle> FetchState for WithBundleState<T> {
         Self {
             component_ids: bundle_info.component_ids.clone(),
             is_dense: !bundle_info.component_ids.iter().any(|id| unsafe {
-                components.get_info_unchecked(*id).storage_type() != StorageType::Table
+                components
+                    .get_relationship_info_unchecked(*id)
+                    .get_component_descriptor()
+                    .storage_type()
+                    != StorageType::Table
             }),
             marker: PhantomData,
         }
@@ -471,10 +475,10 @@ macro_rules! impl_flag_filter {
         // SAFE: this reads the T component. archetype component access and component access are updated to reflect that
         unsafe impl<T: Component> FetchState for $state_name<T> {
             fn init(world: &mut World) -> Self {
-                let component_info = world.components.get_or_insert_info::<T>();
+                let component_info = world.components.get_component_info_or_insert::<T>();
                 Self {
                     component_id: component_info.id(),
-                    storage_type: component_info.storage_type(),
+                    storage_type: component_info.get_component_descriptor().storage_type(),
                     marker: PhantomData,
                 }
             }

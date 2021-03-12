@@ -398,7 +398,7 @@ mod tests {
                 bundle_components.sort();
                 for component_id in bundle_components.iter() {
                     assert!(
-                        components.get_info(*component_id).is_some(),
+                        components.get_relationship_info(*component_id).is_some(),
                         "every bundle component exists in Components"
                     );
                 }

@@ -1,5 +1,5 @@
 use crate::{
-    component::{ComponentFlags, ComponentId, ComponentInfo},
+    component::{ComponentDescriptor, ComponentFlags, ComponentId},
     entity::Entity,
     storage::BlobVec,
 };
@@ -93,7 +93,7 @@ pub struct ComponentSparseSet {
 }
 
 impl ComponentSparseSet {
-    pub fn new(component_info: &ComponentInfo, capacity: usize) -> Self {
+    pub fn new(component_info: &ComponentDescriptor, capacity: usize) -> Self {
         Self {
             dense: BlobVec::new(component_info.layout(), component_info.drop(), capacity),
             flags: UnsafeCell::new(Vec::with_capacity(capacity)),
@@ -423,11 +423,14 @@ pub struct SparseSets {
 }
 
 impl SparseSets {
-    pub fn get_or_insert(&mut self, component_info: &ComponentInfo) -> &mut ComponentSparseSet {
+    pub fn get_or_insert(
+        &mut self,
+        component_info: &crate::component::ComponentInfo,
+    ) -> &mut ComponentSparseSet {
         if !self.sets.contains(component_info.id()) {
             self.sets.insert(
                 component_info.id(),
-                ComponentSparseSet::new(component_info, 64),
+                ComponentSparseSet::new(component_info.get_component_descriptor(), 64),
             );
         }
 

@@ -208,11 +208,10 @@ fn initialize_bundle(
     let mut storage_types = Vec::new();
 
     for type_info in type_info {
-        let component_id = components.get_or_insert_with(type_info.type_id(), || type_info.clone());
-        // SAFE: get_with_type_info ensures info was created
-        let info = unsafe { components.get_info_unchecked(component_id) };
-        component_ids.push(component_id);
-        storage_types.push(info.storage_type());
+        let component_info =
+            components.get_component_info_or_insert_with(type_info.type_id(), || type_info.clone());
+        component_ids.push(component_info.id());
+        storage_types.push(component_info.get_component_descriptor().storage_type());
     }
 
     let mut deduped = component_ids.clone();

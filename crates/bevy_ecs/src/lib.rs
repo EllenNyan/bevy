@@ -15,6 +15,7 @@ pub mod prelude {
     pub use crate::reflect::ReflectComponent;
     pub use crate::{
         bundle::Bundle,
+        component::default_relationship_kinds::*,
         entity::Entity,
         query::{Added, Changed, Flags, Mutated, Or, QueryState, With, WithBundle, Without},
         schedule::{

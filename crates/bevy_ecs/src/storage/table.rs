@@ -39,10 +39,17 @@ pub struct Column {
 
 impl Column {
     #[inline]
-    pub fn with_capacity(component_info: &ComponentInfo, capacity: usize) -> Self {
+    pub fn with_capacity(
+        component_info: &crate::component::ComponentInfo,
+        capacity: usize,
+    ) -> Self {
         Column {
             component_id: component_info.id(),
-            data: BlobVec::new(component_info.layout(), component_info.drop(), capacity),
+            data: BlobVec::new(
+                component_info.get_component_descriptor().layout(),
+                component_info.get_component_descriptor().drop(),
+                capacity,
+            ),
             flags: UnsafeCell::new(Vec::with_capacity(capacity)),
         }
     }
@@ -447,7 +454,7 @@ impl Tables {
         *self.table_ids.entry(hash).or_insert_with(move || {
             let mut table = Table::with_capacity(0, component_ids.len(), 64);
             for component_id in component_ids.iter() {
-                table.add_column(components.get_info_unchecked(*component_id));
+                table.add_column(components.get_relationship_info_unchecked(*component_id));
             }
             tables.push(table);
             TableId(tables.len() - 1)
@@ -477,10 +484,12 @@ mod tests {
     fn table() {
         let mut components = Components::default();
         let type_info = TypeInfo::of::<usize>();
-        let component_id = components.get_or_insert_with(type_info.type_id(), || type_info);
+        let component_id = components
+            .get_component_info_or_insert_with(type_info.type_id(), || type_info)
+            .id();
         let columns = &[component_id];
         let mut table = Table::with_capacity(0, columns.len(), 64);
-        table.add_column(components.get_info(component_id).unwrap());
+        table.add_column(components.get_relationship_info(component_id).unwrap());
         let entities = (0..200).map(Entity::new).collect::<Vec<_>>();
         for (row, entity) in entities.iter().cloned().enumerate() {
             unsafe {

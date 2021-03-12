@@ -170,10 +170,10 @@ pub struct ReadState<T> {
 // SAFE: component access and archetype component access are properly updated to reflect that T is read
 unsafe impl<T: Component> FetchState for ReadState<T> {
     fn init(world: &mut World) -> Self {
-        let component_info = world.components.get_or_insert_info::<T>();
+        let component_info = world.components.get_component_info_or_insert::<T>();
         ReadState {
             component_id: component_info.id(),
-            storage_type: component_info.storage_type(),
+            storage_type: component_info.get_component_descriptor().storage_type(),
             marker: PhantomData,
         }
     }
@@ -315,10 +315,10 @@ pub struct WriteState<T> {
 // SAFE: component access and archetype component access are properly updated to reflect that T is written
 unsafe impl<T: Component> FetchState for WriteState<T> {
     fn init(world: &mut World) -> Self {
-        let component_info = world.components.get_or_insert_info::<T>();
+        let component_info = world.components.get_component_info_or_insert::<T>();
         WriteState {
             component_id: component_info.id(),
-            storage_type: component_info.storage_type(),
+            storage_type: component_info.get_component_descriptor().storage_type(),
             marker: PhantomData,
         }
     }
@@ -592,10 +592,10 @@ pub struct FlagsState<T> {
 // SAFE: component access and archetype component access are properly updated to reflect that T is read
 unsafe impl<T: Component> FetchState for FlagsState<T> {
     fn init(world: &mut World) -> Self {
-        let component_info = world.components.get_or_insert_info::<T>();
+        let component_info = world.components.get_component_info_or_insert::<T>();
         Self {
             component_id: component_info.id(),
-            storage_type: component_info.storage_type(),
+            storage_type: component_info.get_component_descriptor().storage_type(),
             marker: PhantomData,
         }
     }

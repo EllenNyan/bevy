@@ -125,15 +125,22 @@ impl World {
         descriptor: ComponentDescriptor,
     ) -> Result<ComponentId, ComponentsError> {
         let storage_type = descriptor.storage_type();
-        let component_id = self.components.add(descriptor)?;
+
+        let component_id = self.components.new_component_id(descriptor.type_id());
+        let component_info = self.components.register_relationship(
+            crate::component::Relationship::new(
+                self.components.relkind_of_has_component(),
+                crate::component::DummyIdOrEntity::DummyId(component_id),
+            ),
+            descriptor,
+        )?;
+
         // ensure sparse set is created for SparseSet components
         if storage_type == StorageType::SparseSet {
-            // SAFE: just created
-            let info = unsafe { self.components.get_info_unchecked(component_id) };
-            self.storages.sparse_sets.get_or_insert(info);
+            self.storages.sparse_sets.get_or_insert(component_info);
         }
 
-        Ok(component_id)
+        Ok(component_info.id())
     }
 
     /// Retrieves an [EntityRef] that exposes read-only operations for the given `entity`.
@@ -452,7 +459,7 @@ impl World {
 
     /// Returns an iterator of entities that had components of type `T` removed since the last call to [World::clear_trackers].
     pub fn removed<T: Component>(&self) -> std::iter::Cloned<std::slice::Iter<'_, Entity>> {
-        if let Some(component_id) = self.components.get_id(TypeId::of::<T>()) {
+        if let Some(component_id) = self.components.get_component_id(TypeId::of::<T>()) {
             self.removed_with_id(component_id)
         } else {
             [].iter().cloned()
@@ -462,9 +469,9 @@ impl World {
     /// Returns an iterator of entities that had components with the given `component_id` removed since the last call to [World::clear_trackers].
     pub fn removed_with_id(
         &self,
-        component_id: ComponentId,
+        relationship_id: ComponentId,
     ) -> std::iter::Cloned<std::slice::Iter<'_, Entity>> {
-        if let Some(removed) = self.removed_components.get(component_id) {
+        if let Some(removed) = self.removed_components.get(relationship_id) {
             removed.iter().cloned()
         } else {
             [].iter().cloned()
@@ -475,7 +482,7 @@ impl World {
     /// Resources are "unique" data of a given type.
     #[inline]
     pub fn insert_resource<T: Component>(&mut self, value: T) {
-        let component_id = self.components.get_or_insert_resource_id::<T>();
+        let component_id = self.components.get_resource_info_or_insert::<T>().id();
         // SAFE: component_id just initialized and corresponds to resource of type T
         unsafe { self.insert_resource_with_id(component_id, value) };
     }
@@ -485,7 +492,10 @@ impl World {
     #[inline]
     pub fn insert_non_send<T: 'static>(&mut self, value: T) {
         self.validate_non_send_access::<T>();
-        let component_id = self.components.get_or_insert_non_send_resource_id::<T>();
+        let component_id = self
+            .components
+            .get_non_send_resource_info_or_insert::<T>()
+            .id();
         // SAFE: component_id just initialized and corresponds to resource of type T
         unsafe { self.insert_resource_with_id(component_id, value) };
     }
@@ -744,20 +754,23 @@ impl World {
                     },
                 );
                 *archetype_component_count += 1;
-                let component_info = components.get_info_unchecked(component_id);
+                let component_info = components.get_relationship_info_unchecked(component_id);
                 Column::with_capacity(component_info, 1)
             })
     }
 
     pub(crate) fn initialize_resource<T: Component>(&mut self) -> ComponentId {
-        let component_id = self.components.get_or_insert_resource_id::<T>();
+        let component_id = self.components.get_resource_info_or_insert::<T>().id();
         // SAFE: resource initialized above
         unsafe { self.initialize_resource_internal(component_id) };
         component_id
     }
 
     pub(crate) fn initialize_non_send_resource<T: 'static>(&mut self) -> ComponentId {
-        let component_id = self.components.get_or_insert_non_send_resource_id::<T>();
+        let component_id = self
+            .components
+            .get_non_send_resource_info_or_insert::<T>()
+            .id();
         // SAFE: resource initialized above
         unsafe { self.initialize_resource_internal(component_id) };
         component_id

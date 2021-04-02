@@ -121,7 +121,7 @@ mod tests {
         world
             .query::<&mut A>()
             .iter_combinations_mut(&mut world)
-            .for_each(|[mut a, mut b, mut c]| {
+            .for_each(|[mut a, mut b, mut c]: [crate::prelude::Mut<A>; 3]| {
                 a.0 += 10;
                 b.0 += 100;
                 c.0 += 1000;

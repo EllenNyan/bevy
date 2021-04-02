@@ -192,15 +192,20 @@ where
     }
 
     /// Iterate over all combinations of queried components.
-    pub fn for_each<U>(mut self, f: U)
+    pub fn for_each<U>(mut self, mut f: U)
     where
         Q::Fetch: Clone,
         F::Fetch: Clone,
-        for<'a> &'a U: CombinationCallable<'w, Q, K>,
+        U: CombinationCallable<Q, K>,
     {
         // safety: the fetch lifetime is limited to the closure, preventing aliasing
-        while let Some(next) = unsafe { self.fetch_next_aliased_unchecked() } {
-            (&f).call(next)
+        loop {
+            let this = &mut f;
+            if let Some(next) = self.fetch_next() {
+                (this).call(next);
+            } else {
+                break;
+            };
         }
     }
 }
@@ -253,16 +258,29 @@ where
     }
 }
 
-pub trait CombinationCallable<'w, Q: WorldQuery, const K: usize> {
-    fn call(self, items: [<Q::Fetch as Fetch<'w>>::Item; K]);
+pub trait HideFunc<'a, Q: WorldQuery, const K: usize> {
+    fn call(self, items: [<Q::Fetch as Fetch<'a>>::Item; K]);
 }
 
-impl<'w, T, Q: WorldQuery, const K: usize> CombinationCallable<'w, Q, K> for T
+impl<'a, Q: WorldQuery, T, const K: usize> HideFunc<'a, Q, K> for T
 where
-    T: Fn([<Q::Fetch as Fetch<'w>>::Item; K]),
+    T: FnMut([<Q::Fetch as Fetch<'a>>::Item; K]),
 {
-    fn call(self, items: [<Q::Fetch as Fetch<'w>>::Item; K]) {
+    fn call(mut self, items: [<Q::Fetch as Fetch<'a>>::Item; K]) {
         (self)(items)
+    }
+}
+
+pub trait CombinationCallable<Q: WorldQuery, const K: usize> {
+    fn call<'a>(&'a mut self, items: [<Q::Fetch as Fetch<'a>>::Item; K]);
+}
+
+impl<T, Q: WorldQuery, const K: usize> CombinationCallable<Q, K> for T
+where
+    for<'a> &'a mut T: HideFunc<'a, Q, K>,
+{
+    fn call<'a>(&'a mut self, items: [<Q::Fetch as Fetch<'a>>::Item; K]) {
+        <&mut Self as HideFunc<'a, Q, K>>::call(self, items);
     }
 }
 

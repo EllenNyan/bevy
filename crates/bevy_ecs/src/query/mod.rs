@@ -116,6 +116,8 @@ mod tests {
             c.0 += 1000;
         }
 
+        let mut works = 10;
+        let mut shouldnt_work = None;
         world
             .query::<&mut A>()
             .iter_combinations_mut(&mut world)
@@ -123,6 +125,8 @@ mod tests {
                 a.0 += 10;
                 b.0 += 100;
                 c.0 += 1000;
+                works = a.0;
+                shouldnt_work = Some(a);
             });
 
         let values: Vec<[&A; 3]> = a_query.iter_combinations(&world).collect();

@@ -1,6 +1,6 @@
 use crate::{
     archetype::{Archetype, ArchetypeComponentId},
-    component::{Component, ComponentTicks, ComponentFlags, RelationshipId, RelationshipKindId, StorageType},
+    component::{Component, ComponentTicks, RelationshipId, RelationshipKindId, StorageType},
     entity::Entity,
     query::{Access, FilteredAccess},
     storage::{ComponentSparseSet, Table, Tables},
@@ -49,7 +49,7 @@ pub trait Fetch<'w>: Sized {
     /// archetypes that match this [Fetch]
     ///
     /// # Safety
-    /// `archetype` and `tables` must be from the [World] [Fetch::init] was called on. `state` must 
+    /// `archetype` and `tables` must be from the [World] [Fetch::init] was called on. `state` must
     /// be the [Self::State] this was initialized with.
     unsafe fn set_archetype(
         &mut self,
@@ -63,7 +63,7 @@ pub trait Fetch<'w>: Sized {
     /// that match this [Fetch]
     ///
     /// # Safety
-    /// `table` must be from the [World] [Fetch::init] was called on. `state` must be the 
+    /// `table` must be from the [World] [Fetch::init] was called on. `state` must be the
     /// [Self::State] this was initialized with.
     unsafe fn set_table(
         &mut self,
@@ -613,7 +613,12 @@ impl<'w, T: Component> Fetch<'w> for ReadRelationFetch<T> {
     type State = ReadRelationState<T>;
     type RelationFilter = ();
 
-    unsafe fn init(world: &World, state: &Self::State) -> Self {
+    unsafe fn init(
+        world: &World,
+        state: &Self::State,
+        last_change_tick: u32,
+        change_tick: u32,
+    ) -> Self {
         todo!()
     }
 
@@ -820,7 +825,7 @@ pub struct ChangeTrackersState<T> {
     marker: PhantomData<T>,
 }
 
-// SAFE: component access and archetype component access are properly updated to reflect that T is 
+// SAFE: component access and archetype component access are properly updated to reflect that T is
 /// read
 unsafe impl<T: Component> FetchState for ChangeTrackersState<T> {
     // FIXME(Relationships) ?????????

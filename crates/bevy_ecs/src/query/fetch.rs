@@ -1,6 +1,6 @@
 use crate::{
     archetype::{Archetype, ArchetypeComponentId},
-    component::{Component, ComponentId, ComponentTicks, StorageType},
+    component::{Component, ComponentTicks, ComponentFlags, RelationshipId, RelationshipKindId, StorageType},
     entity::Entity,
     query::{Access, FilteredAccess},
     storage::{ComponentSparseSet, Table, Tables},
@@ -13,13 +13,18 @@ use std::{
 };
 
 pub trait WorldQuery {
-    type Fetch: for<'a> Fetch<'a, State = Self::State>;
+    type Fetch: for<'a> Fetch<
+        'a,
+        State = Self::State,
+        RelationFilter = <Self::State as FetchState>::RelationFilter,
+    >;
     type State: FetchState;
 }
 
 pub trait Fetch<'w>: Sized {
     type Item;
-    type State: FetchState;
+    type State: FetchState<RelationFilter = Self::RelationFilter>;
+    type RelationFilter: Clone + std::hash::Hash + PartialEq + Eq + Default + Send + Sync + 'static;
 
     /// Creates a new instance of this fetch.
     ///
@@ -44,17 +49,28 @@ pub trait Fetch<'w>: Sized {
     /// archetypes that match this [Fetch]
     ///
     /// # Safety
-    /// `archetype` and `tables` must be from the [World] [Fetch::init] was called on. `state` must
+    /// `archetype` and `tables` must be from the [World] [Fetch::init] was called on. `state` must 
     /// be the [Self::State] this was initialized with.
-    unsafe fn set_archetype(&mut self, state: &Self::State, archetype: &Archetype, tables: &Tables);
+    unsafe fn set_archetype(
+        &mut self,
+        state: &Self::State,
+        relation_filter: &Self::RelationFilter,
+        archetype: &Archetype,
+        tables: &Tables,
+    );
 
     /// Adjusts internal state to account for the next [Table]. This will always be called on tables
     /// that match this [Fetch]
     ///
     /// # Safety
-    /// `table` must be from the [World] [Fetch::init] was called on. `state` must be the
+    /// `table` must be from the [World] [Fetch::init] was called on. `state` must be the 
     /// [Self::State] this was initialized with.
-    unsafe fn set_table(&mut self, state: &Self::State, table: &Table);
+    unsafe fn set_table(
+        &mut self,
+        state: &Self::State,
+        relation_filter: &Self::RelationFilter,
+        table: &Table,
+    );
 
     /// Fetch [Self::Item] for the given `archetype_index` in the current [Archetype]. This must
     /// always be called after [Fetch::set_archetype] with an `archetype_index` in the range of
@@ -82,15 +98,21 @@ pub trait Fetch<'w>: Sized {
 /// [FetchState::matches_archetype], [FetchState::matches_table], [Fetch::archetype_fetch], and
 /// [Fetch::table_fetch]
 pub unsafe trait FetchState: Send + Sync + Sized {
+    type RelationFilter: Clone + std::hash::Hash + PartialEq + Eq + Default + Send + Sync + 'static;
+
     fn init(world: &mut World) -> Self;
-    fn update_component_access(&self, access: &mut FilteredAccess<ComponentId>);
+    fn update_component_access(&self, access: &mut FilteredAccess<RelationshipId>);
     fn update_archetype_component_access(
         &self,
         archetype: &Archetype,
         access: &mut Access<ArchetypeComponentId>,
     );
-    fn matches_archetype(&self, archetype: &Archetype) -> bool;
-    fn matches_table(&self, table: &Table) -> bool;
+    fn matches_archetype(
+        &self,
+        archetype: &Archetype,
+        relation_filter: &Self::RelationFilter,
+    ) -> bool;
+    fn matches_table(&self, table: &Table, relation_filter: &Self::RelationFilter) -> bool;
 }
 
 /// A fetch that is read only. This must only be implemented for read-only fetches.
@@ -112,11 +134,13 @@ pub struct EntityState;
 
 // SAFE: no component or archetype access
 unsafe impl FetchState for EntityState {
+    type RelationFilter = ();
+
     fn init(_world: &mut World) -> Self {
         Self
     }
 
-    fn update_component_access(&self, _access: &mut FilteredAccess<ComponentId>) {}
+    fn update_component_access(&self, _access: &mut FilteredAccess<RelationshipId>) {}
 
     fn update_archetype_component_access(
         &self,
@@ -126,12 +150,16 @@ unsafe impl FetchState for EntityState {
     }
 
     #[inline]
-    fn matches_archetype(&self, _archetype: &Archetype) -> bool {
+    fn matches_archetype(
+        &self,
+        _archetype: &Archetype,
+        _relation_filter: &Self::RelationFilter,
+    ) -> bool {
         true
     }
 
     #[inline]
-    fn matches_table(&self, _table: &Table) -> bool {
+    fn matches_table(&self, _table: &Table, _relation_filter: &Self::RelationFilter) -> bool {
         true
     }
 }
@@ -139,6 +167,7 @@ unsafe impl FetchState for EntityState {
 impl<'w> Fetch<'w> for EntityFetch {
     type Item = Entity;
     type State = EntityState;
+    type RelationFilter = ();
 
     #[inline]
     fn is_dense(&self) -> bool {
@@ -160,6 +189,7 @@ impl<'w> Fetch<'w> for EntityFetch {
     unsafe fn set_archetype(
         &mut self,
         _state: &Self::State,
+        _relation_filter: &Self::RelationFilter,
         archetype: &Archetype,
         _tables: &Tables,
     ) {
@@ -167,7 +197,12 @@ impl<'w> Fetch<'w> for EntityFetch {
     }
 
     #[inline]
-    unsafe fn set_table(&mut self, _state: &Self::State, table: &Table) {
+    unsafe fn set_table(
+        &mut self,
+        _state: &Self::State,
+        _relation_filter: &Self::RelationFilter,
+        table: &Table,
+    ) {
         self.entities = table.entities().as_ptr();
     }
 
@@ -188,7 +223,7 @@ impl<T: Component> WorldQuery for &T {
 }
 
 pub struct ReadState<T> {
-    component_id: ComponentId,
+    component_id: RelationshipId,
     storage_type: StorageType,
     marker: PhantomData<T>,
 }
@@ -196,16 +231,19 @@ pub struct ReadState<T> {
 // SAFE: component access and archetype component access are properly updated to reflect that T is
 // read
 unsafe impl<T: Component> FetchState for ReadState<T> {
+    type RelationFilter = ();
+
     fn init(world: &mut World) -> Self {
-        let component_info = world.components.get_or_insert_info::<T>();
+        let (component_kind, component_info) =
+            world.relationships.get_component_info_or_insert::<T>();
         ReadState {
             component_id: component_info.id(),
-            storage_type: component_info.storage_type(),
+            storage_type: component_kind.data_layout().storage_type(),
             marker: PhantomData,
         }
     }
 
-    fn update_component_access(&self, access: &mut FilteredAccess<ComponentId>) {
+    fn update_component_access(&self, access: &mut FilteredAccess<RelationshipId>) {
         access.add_read(self.component_id)
     }
 
@@ -221,11 +259,15 @@ unsafe impl<T: Component> FetchState for ReadState<T> {
         }
     }
 
-    fn matches_archetype(&self, archetype: &Archetype) -> bool {
+    fn matches_archetype(
+        &self,
+        archetype: &Archetype,
+        _relation_filter: &Self::RelationFilter,
+    ) -> bool {
         archetype.contains(self.component_id)
     }
 
-    fn matches_table(&self, table: &Table) -> bool {
+    fn matches_table(&self, table: &Table, _relation_filter: &Self::RelationFilter) -> bool {
         table.has_column(self.component_id)
     }
 }
@@ -244,6 +286,7 @@ unsafe impl<T> ReadOnlyFetch for ReadFetch<T> {}
 impl<'w, T: Component> Fetch<'w> for ReadFetch<T> {
     type Item = &'w T;
     type State = ReadState<T>;
+    type RelationFilter = ();
 
     #[inline]
     fn is_dense(&self) -> bool {
@@ -280,6 +323,7 @@ impl<'w, T: Component> Fetch<'w> for ReadFetch<T> {
     unsafe fn set_archetype(
         &mut self,
         state: &Self::State,
+        _relation_filter: &Self::RelationFilter,
         archetype: &Archetype,
         tables: &Tables,
     ) {
@@ -296,7 +340,12 @@ impl<'w, T: Component> Fetch<'w> for ReadFetch<T> {
     }
 
     #[inline]
-    unsafe fn set_table(&mut self, state: &Self::State, table: &Table) {
+    unsafe fn set_table(
+        &mut self,
+        state: &Self::State,
+        _relation_filter: &Self::RelationFilter,
+        table: &Table,
+    ) {
         self.table_components = table
             .get_column(state.component_id)
             .unwrap()
@@ -341,7 +390,7 @@ pub struct WriteFetch<T> {
 }
 
 pub struct WriteState<T> {
-    component_id: ComponentId,
+    component_id: RelationshipId,
     storage_type: StorageType,
     marker: PhantomData<T>,
 }
@@ -349,16 +398,19 @@ pub struct WriteState<T> {
 // SAFE: component access and archetype component access are properly updated to reflect that T is
 // written
 unsafe impl<T: Component> FetchState for WriteState<T> {
+    type RelationFilter = ();
+
     fn init(world: &mut World) -> Self {
-        let component_info = world.components.get_or_insert_info::<T>();
+        let (component_kind, component_info) =
+            world.relationships.get_component_info_or_insert::<T>();
         WriteState {
             component_id: component_info.id(),
-            storage_type: component_info.storage_type(),
+            storage_type: component_kind.data_layout().storage_type(),
             marker: PhantomData,
         }
     }
 
-    fn update_component_access(&self, access: &mut FilteredAccess<ComponentId>) {
+    fn update_component_access(&self, access: &mut FilteredAccess<RelationshipId>) {
         if access.access().has_read(self.component_id) {
             panic!("&mut {} conflicts with a previous access in this query. Mutable component access must be unique.",
                 std::any::type_name::<T>());
@@ -378,11 +430,17 @@ unsafe impl<T: Component> FetchState for WriteState<T> {
         }
     }
 
-    fn matches_archetype(&self, archetype: &Archetype) -> bool {
+    fn matches_archetype(
+        &self,
+        archetype: &Archetype,
+        _relation_filter: &Self::RelationFilter,
+    ) -> bool {
+        // FIXME(Relationships) there's a bunch of this self.component_id stuff- this should
+        // be to ignore the relation_filter as long as the component ID is for Relation(T, None)
         archetype.contains(self.component_id)
     }
 
-    fn matches_table(&self, table: &Table) -> bool {
+    fn matches_table(&self, table: &Table, _relation_filter: &Self::RelationFilter) -> bool {
         table.has_column(self.component_id)
     }
 }
@@ -390,6 +448,7 @@ unsafe impl<T: Component> FetchState for WriteState<T> {
 impl<'w, T: Component> Fetch<'w> for WriteFetch<T> {
     type Item = Mut<'w, T>;
     type State = WriteState<T>;
+    type RelationFilter = ();
 
     #[inline]
     fn is_dense(&self) -> bool {
@@ -429,6 +488,7 @@ impl<'w, T: Component> Fetch<'w> for WriteFetch<T> {
     unsafe fn set_archetype(
         &mut self,
         state: &Self::State,
+        _relation_filter: &Self::RelationFilter,
         archetype: &Archetype,
         tables: &Tables,
     ) {
@@ -446,7 +506,12 @@ impl<'w, T: Component> Fetch<'w> for WriteFetch<T> {
     }
 
     #[inline]
-    unsafe fn set_table(&mut self, state: &Self::State, table: &Table) {
+    unsafe fn set_table(
+        &mut self,
+        state: &Self::State,
+        _relation_filter: &Self::RelationFilter,
+        table: &Table,
+    ) {
         let column = table.get_column(state.component_id).unwrap();
         self.table_components = column.get_ptr().cast::<T>();
         self.table_ticks = column.get_ticks_mut_ptr();
@@ -489,6 +554,101 @@ impl<'w, T: Component> Fetch<'w> for WriteFetch<T> {
     }
 }
 
+pub struct Relations<T: Component>(std::marker::PhantomData<T>, [u8]);
+
+impl<T: Component> WorldQuery for Relations<T> {
+    type Fetch = ReadRelationFetch<T>;
+    type State = ReadRelationState<T>;
+}
+
+pub struct ReadRelationState<T> {
+    p: PhantomData<T>,
+    relation_kind: RelationshipKindId,
+    storage_type: StorageType,
+}
+
+pub struct ReadRelationFetch<T> {
+    p: PhantomData<T>,
+}
+
+unsafe impl<T: Component> FetchState for ReadRelationState<T> {
+    type RelationFilter = ();
+
+    fn init(world: &mut World) -> Self {
+        let (rel_kind, _) = world.relationships.get_component_info_or_insert::<T>();
+        Self {
+            p: PhantomData,
+            relation_kind: rel_kind.id(),
+            storage_type: rel_kind.data_layout().storage_type(),
+        }
+    }
+
+    fn update_component_access(&self, access: &mut FilteredAccess<RelationshipId>) {
+        todo!()
+    }
+
+    fn update_archetype_component_access(
+        &self,
+        archetype: &Archetype,
+        access: &mut Access<ArchetypeComponentId>,
+    ) {
+        todo!()
+    }
+
+    fn matches_archetype(
+        &self,
+        archetype: &Archetype,
+        relation_filter: &Self::RelationFilter,
+    ) -> bool {
+        todo!()
+    }
+
+    fn matches_table(&self, table: &Table, relation_filter: &Self::RelationFilter) -> bool {
+        todo!()
+    }
+}
+
+impl<'w, T: Component> Fetch<'w> for ReadRelationFetch<T> {
+    type Item = ();
+    type State = ReadRelationState<T>;
+    type RelationFilter = ();
+
+    unsafe fn init(world: &World, state: &Self::State) -> Self {
+        todo!()
+    }
+
+    fn is_dense(&self) -> bool {
+        todo!()
+    }
+
+    unsafe fn set_archetype(
+        &mut self,
+        state: &Self::State,
+        relation_filter: &Self::RelationFilter,
+        archetype: &Archetype,
+        tables: &Tables,
+    ) {
+        todo!()
+    }
+
+    unsafe fn set_table(
+        &mut self,
+        state: &Self::State,
+        relation_filter: &Self::RelationFilter,
+        table: &Table,
+    ) {
+        todo!()
+    }
+
+    unsafe fn archetype_fetch(&mut self, archetype_index: usize) -> Self::Item {
+        todo!()
+    }
+
+    unsafe fn table_fetch(&mut self, table_row: usize) -> Self::Item {
+        todo!()
+    }
+}
+
 impl<T: WorldQuery> WorldQuery for Option<T> {
     type Fetch = OptionFetch<T::Fetch>;
     type State = OptionState<T::State>;
@@ -509,13 +669,15 @@ pub struct OptionState<T: FetchState> {
 // SAFE: component access and archetype component access are properly updated according to the
 // internal Fetch
 unsafe impl<T: FetchState> FetchState for OptionState<T> {
+    type RelationFilter = T::RelationFilter;
+
     fn init(world: &mut World) -> Self {
         Self {
             state: T::init(world),
         }
     }
 
-    fn update_component_access(&self, access: &mut FilteredAccess<ComponentId>) {
+    fn update_component_access(&self, access: &mut FilteredAccess<RelationshipId>) {
         self.state.update_component_access(access);
     }
 
@@ -524,17 +686,22 @@ unsafe impl<T: FetchState> FetchState for OptionState<T> {
         archetype: &Archetype,
         access: &mut Access<ArchetypeComponentId>,
     ) {
-        if self.state.matches_archetype(archetype) {
+        // FIXME(Relationships) is default right..?
+        if self.state.matches_archetype(archetype, &Default::default()) {
             self.state
                 .update_archetype_component_access(archetype, access)
         }
     }
 
-    fn matches_archetype(&self, _archetype: &Archetype) -> bool {
+    fn matches_archetype(
+        &self,
+        _archetype: &Archetype,
+        _relation_filter: &Self::RelationFilter,
+    ) -> bool {
         true
     }
 
-    fn matches_table(&self, _table: &Table) -> bool {
+    fn matches_table(&self, _table: &Table, _relation_filter: &Self::RelationFilter) -> bool {
         true
     }
 }
@@ -542,6 +709,7 @@ unsafe impl<T: FetchState> FetchState for OptionState<T> {
 impl<'w, T: Fetch<'w>> Fetch<'w> for OptionFetch<T> {
     type Item = Option<T::Item>;
     type State = OptionState<T::State>;
+    type RelationFilter = T::RelationFilter;
 
     #[inline]
     fn is_dense(&self) -> bool {
@@ -564,20 +732,29 @@ impl<'w, T: Fetch<'w>> Fetch<'w> for OptionFetch<T> {
     unsafe fn set_archetype(
         &mut self,
         state: &Self::State,
+        relation_filter: &Self::RelationFilter,
         archetype: &Archetype,
         tables: &Tables,
     ) {
-        self.matches = state.state.matches_archetype(archetype);
+        // FIXME(Relationships) I don't get why we need to do this matching here.
+        // why do we call set_archetype with archetypes that potentially dont match..?
+        self.matches = state.state.matches_archetype(archetype, relation_filter);
         if self.matches {
-            self.fetch.set_archetype(&state.state, archetype, tables);
+            self.fetch
+                .set_archetype(&state.state, relation_filter, archetype, tables);
         }
     }
 
     #[inline]
-    unsafe fn set_table(&mut self, state: &Self::State, table: &Table) {
-        self.matches = state.state.matches_table(table);
+    unsafe fn set_table(
+        &mut self,
+        state: &Self::State,
+        relation_filter: &Self::RelationFilter,
+        table: &Table,
+    ) {
+        self.matches = state.state.matches_table(table, relation_filter);
         if self.matches {
-            self.fetch.set_table(&state.state, table);
+            self.fetch.set_table(&state.state, relation_filter, table);
         }
     }
 
@@ -638,24 +815,28 @@ impl<T: Component> WorldQuery for ChangeTrackers<T> {
 }
 
 pub struct ChangeTrackersState<T> {
-    component_id: ComponentId,
+    component_id: RelationshipId,
     storage_type: StorageType,
     marker: PhantomData<T>,
 }
 
-// SAFE: component access and archetype component access are properly updated to reflect that T is
-// read
+// SAFE: component access and archetype component access are properly updated to reflect that T is 
+/// read
 unsafe impl<T: Component> FetchState for ChangeTrackersState<T> {
+    // FIXME(Relationships) ?????????
+    type RelationFilter = ();
+
     fn init(world: &mut World) -> Self {
-        let component_info = world.components.get_or_insert_info::<T>();
+        let (component_kind, component_info) =
+            world.relationships.get_component_info_or_insert::<T>();
         Self {
             component_id: component_info.id(),
-            storage_type: component_info.storage_type(),
+            storage_type: component_kind.data_layout().storage_type(),
             marker: PhantomData,
         }
     }
 
-    fn update_component_access(&self, access: &mut FilteredAccess<ComponentId>) {
+    fn update_component_access(&self, access: &mut FilteredAccess<RelationshipId>) {
         access.add_read(self.component_id)
     }
 
@@ -671,11 +852,15 @@ unsafe impl<T: Component> FetchState for ChangeTrackersState<T> {
         }
     }
 
-    fn matches_archetype(&self, archetype: &Archetype) -> bool {
+    fn matches_archetype(
+        &self,
+        archetype: &Archetype,
+        _relation_filter: &Self::RelationFilter,
+    ) -> bool {
         archetype.contains(self.component_id)
     }
 
-    fn matches_table(&self, table: &Table) -> bool {
+    fn matches_table(&self, table: &Table, _relation_filter: &Self::RelationFilter) -> bool {
         table.has_column(self.component_id)
     }
 }
@@ -697,6 +882,8 @@ unsafe impl<T> ReadOnlyFetch for ChangeTrackersFetch<T> {}
 impl<'w, T: Component> Fetch<'w> for ChangeTrackersFetch<T> {
     type Item = ChangeTrackers<T>;
     type State = ChangeTrackersState<T>;
+    // FIXME(Relationships) ??????????????/
+    type RelationFilter = ();
 
     #[inline]
     fn is_dense(&self) -> bool {
@@ -736,6 +923,7 @@ impl<'w, T: Component> Fetch<'w> for ChangeTrackersFetch<T> {
     unsafe fn set_archetype(
         &mut self,
         state: &Self::State,
+        _relation_filter: &Self::RelationFilter,
         archetype: &Archetype,
         tables: &Tables,
     ) {
@@ -752,7 +940,12 @@ impl<'w, T: Component> Fetch<'w> for ChangeTrackersFetch<T> {
     }
 
     #[inline]
-    unsafe fn set_table(&mut self, state: &Self::State, table: &Table) {
+    unsafe fn set_table(
+        &mut self,
+        state: &Self::State,
+        _relation_filter: &Self::RelationFilter,
+        table: &Table,
+    ) {
         self.table_ticks = table
             .get_column(state.component_id)
             .unwrap()
@@ -796,11 +989,12 @@ impl<'w, T: Component> Fetch<'w> for ChangeTrackersFetch<T> {
 }
 
 macro_rules! impl_tuple_fetch {
-    ($(($name: ident, $state: ident)),*) => {
+    ($(($name: ident, $state: ident, $relation_filter: ident)),*) => {
         #[allow(non_snake_case)]
         impl<'a, $($name: Fetch<'a>),*> Fetch<'a> for ($($name,)*) {
             type Item = ($($name::Item,)*);
             type State = ($($name::State,)*);
+            type RelationFilter = ($($name::RelationFilter,)*);
 
             unsafe fn init(_world: &World, state: &Self::State, _last_change_tick: u32, _change_tick: u32) -> Self {
                 let ($($name,)*) = state;
@@ -815,17 +1009,19 @@ macro_rules! impl_tuple_fetch {
             }
 
             #[inline]
-            unsafe fn set_archetype(&mut self, _state: &Self::State, _archetype: &Archetype, _tables: &Tables) {
+            unsafe fn set_archetype(&mut self, _state: &Self::State, relation_filter: &Self::RelationFilter, _archetype: &Archetype, _tables: &Tables) {
                 let ($($name,)*) = self;
                 let ($($state,)*) = _state;
-                $($name.set_archetype($state, _archetype, _tables);)*
+                let ($($relation_filter,)*) = relation_filter;
+                $($name.set_archetype($state, $relation_filter, _archetype, _tables);)*
             }
 
             #[inline]
-            unsafe fn set_table(&mut self, _state: &Self::State, _table: &Table) {
+            unsafe fn set_table(&mut self, _state: &Self::State, _relation_filter: &Self::RelationFilter, _table: &Table) {
                 let ($($name,)*) = self;
                 let ($($state,)*) = _state;
-                $($name.set_table($state, _table);)*
+                let ($($relation_filter,)*) = _relation_filter;
+                $($name.set_table($state, $relation_filter, _table);)*
             }
 
             #[inline]
@@ -844,11 +1040,13 @@ macro_rules! impl_tuple_fetch {
         // SAFE: update_component_access and update_archetype_component_access are called for each item in the tuple
         #[allow(non_snake_case)]
         unsafe impl<$($name: FetchState),*> FetchState for ($($name,)*) {
+            type RelationFilter = ($($name::RelationFilter,)*);
+
             fn init(_world: &mut World) -> Self {
                 ($($name::init(_world),)*)
             }
 
-            fn update_component_access(&self, _access: &mut FilteredAccess<ComponentId>) {
+            fn update_component_access(&self, _access: &mut FilteredAccess<RelationshipId>) {
                 let ($($name,)*) = self;
                 $($name.update_component_access(_access);)*
             }
@@ -858,14 +1056,16 @@ macro_rules! impl_tuple_fetch {
                 $($name.update_archetype_component_access(_archetype, _access);)*
             }
 
-            fn matches_archetype(&self, _archetype: &Archetype) -> bool {
+            fn matches_archetype(&self, _archetype: &Archetype, _relation_filter: &Self::RelationFilter) -> bool {
                 let ($($name,)*) = self;
-                true $(&& $name.matches_archetype(_archetype))*
+                let ($($relation_filter,)*) = _relation_filter;
+                true $(&& $name.matches_archetype(_archetype, $relation_filter))*
             }
 
-            fn matches_table(&self, _table: &Table) -> bool {
+            fn matches_table(&self, _table: &Table, _relation_filter: &Self::RelationFilter) -> bool {
                 let ($($name,)*) = self;
-                true $(&& $name.matches_table(_table))*
+                let ($($relation_filter,)*) = _relation_filter;
+                true $(&& $name.matches_table(_table, $relation_filter))*
             }
         }
 
@@ -880,4 +1080,4 @@ macro_rules! impl_tuple_fetch {
     };
 }
 
-all_tuples!(impl_tuple_fetch, 0, 15, F, S);
+all_tuples!(impl_tuple_fetch, 0, 11, F, S, R);

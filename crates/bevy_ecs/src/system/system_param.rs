@@ -1,7 +1,7 @@
 use crate::{
     archetype::{Archetype, Archetypes},
     bundle::Bundles,
-    component::{Component, ComponentId, ComponentTicks, Components},
+    component::{Component, ComponentTicks, RelationshipId, Relationships},
     entity::{Entities, Entity},
     query::{FilterFetch, FilteredAccess, FilteredAccessSet, QueryState, WorldQuery},
     system::{CommandQueue, Commands, Query, SystemState},
@@ -101,7 +101,18 @@ where
     }
 
     fn new_archetype(&mut self, archetype: &Archetype, system_state: &mut SystemState) {
-        self.new_archetype(archetype);
+        // FIXME(Relationships) investigate this function
+        for cache in self.relation_filter_accesses.values_mut() {
+            Self::new_archetype(
+                &self.fetch_state,
+                &self.filter_state,
+                &mut self.archetype_component_access,
+                &self.current_relation_filter,
+                cache,
+                archetype,
+            );
+        }
+
         system_state
             .archetype_component_access
             .extend(&self.archetype_component_access);
@@ -131,8 +142,9 @@ fn assert_component_access_compatibility(
     system_name: &str,
     query_type: &'static str,
     filter_type: &'static str,
-    system_access: &FilteredAccessSet<ComponentId>,
-    current: &FilteredAccess<ComponentId>,
+    // FIXME(Relationships) is this right
+    system_access: &FilteredAccessSet<RelationshipId>,
+    current: &FilteredAccess<RelationshipId>,
     world: &World,
 ) {
     let mut conflicts = system_access.get_conflicts(current);
@@ -141,7 +153,15 @@ fn assert_component_access_compatibility(
     }
     let conflicting_components = conflicts
         .drain(..)
-        .map(|component_id| world.components.get_info(component_id).unwrap().name())
+        .map(|component_id| {
+            world
+                .relationships
+                .get_relationship_info(component_id)
+                .unwrap()
+                .0
+                .data_layout()
+                .name()
+        })
         .collect::<Vec<&str>>();
     let accesses = conflicting_components.join(", ");
     panic!("Query<{}, {}> in system {} accesses component(s) {} in a way that conflicts with a previous system parameter. Allowing this would break Rust's mutability rules. Consider merging conflicting Queries into a QuerySet.",
@@ -189,7 +209,7 @@ impl<'w, T: Component> Deref for Res<'w, T> {
 }
 
 pub struct ResState<T> {
-    component_id: ComponentId,
+    component_id: RelationshipId,
     marker: PhantomData<T>,
 }
 
@@ -335,7 +355,7 @@ impl<'w, T: Component> DerefMut for ResMut<'w, T> {
 }
 
 pub struct ResMutState<T> {
-    component_id: ComponentId,
+    component_id: RelationshipId,
     marker: PhantomData<T>,
 }
 
@@ -528,7 +548,7 @@ impl<'a, T: Component + FromWorld> SystemParamFetch<'a> for LocalState<T> {
 
 pub struct RemovedComponents<'a, T> {
     world: &'a World,
-    component_id: ComponentId,
+    component_id: RelationshipId,
     marker: PhantomData<T>,
 }
 
@@ -539,7 +559,7 @@ impl<'a, T> RemovedComponents<'a, T> {
 }
 
 pub struct RemovedComponentsState<T> {
-    component_id: ComponentId,
+    component_id: RelationshipId,
     marker: PhantomData<T>,
 }
 
@@ -554,7 +574,11 @@ unsafe impl<T: Component> SystemParamState for RemovedComponentsState<T> {
 
     fn init(world: &mut World, _system_state: &mut SystemState, _config: Self::Config) -> Self {
         Self {
-            component_id: world.components.get_or_insert_id::<T>(),
+            component_id: world
+                .relationships
+                .get_component_info_or_insert::<T>()
+                .1
+                .id(),
             marker: PhantomData,
         }
     }
@@ -612,7 +636,7 @@ impl<'w, T: 'static> Deref for NonSend<'w, T> {
 }
 
 pub struct NonSendState<T> {
-    component_id: ComponentId,
+    component_id: RelationshipId,
     marker: PhantomData<fn() -> T>,
 }
 
@@ -728,7 +752,7 @@ impl<'a, T: 'static + core::fmt::Debug> core::fmt::Debug for NonSendMut<'a, T> {
 }
 
 pub struct NonSendMutState<T> {
-    component_id: ComponentId,
+    component_id: RelationshipId,
     marker: PhantomData<fn() -> T>,
 }
 
@@ -744,7 +768,11 @@ unsafe impl<T: 'static> SystemParamState for NonSendMutState<T> {
     fn init(world: &mut World, system_state: &mut SystemState, _config: Self::Config) -> Self {
         system_state.set_non_send();
 
-        let component_id = world.components.get_or_insert_non_send_resource_id::<T>();
+        let component_id = world
+            .relationships
+            .get_non_send_resource_info_or_insert::<T>()
+            .1
+            .id();
         let combined_access = system_state.component_access_set.combined_access_mut();
         if combined_access.has_write(component_id) {
             panic!(
@@ -834,7 +862,7 @@ impl<'a> SystemParamFetch<'a> for ArchetypesState {
     }
 }
 
-impl<'a> SystemParam for &'a Components {
+impl<'a> SystemParam for &'a Relationships {
     type Fetch = ComponentsState;
 }
 
@@ -852,7 +880,7 @@ unsafe impl SystemParamState for ComponentsState {
 }
 
 impl<'a> SystemParamFetch<'a> for ComponentsState {
-    type Item = &'a Components;
+    type Item = &'a Relationships;
 
     #[inline]
     unsafe fn get_param(

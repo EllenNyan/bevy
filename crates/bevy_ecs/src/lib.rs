@@ -1065,6 +1065,20 @@ mod tests {
     }
 
     #[test]
+    fn borrow_and_changed() {
+        let mut world = World::new();
+        world.query_filtered::<&A, Changed<A>>();
+        world.query_filtered::<&mut A, Changed<A>>();
+    }
+
+    #[test]
+    fn borrow_and_added() {
+        let mut world = World::new();
+        world.query_filtered::<&A, Added<A>>();
+        world.query_filtered::<&mut A, Added<A>>();
+    }
+
+    #[test]
     #[should_panic]
     fn ref_and_mut_query_panic() {
         let mut world = World::new();

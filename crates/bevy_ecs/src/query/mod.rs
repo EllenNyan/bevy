@@ -2,12 +2,14 @@ mod access;
 mod fetch;
 mod filter;
 mod iter;
+mod relation_filter;
 mod state;
 
 pub use access::*;
 pub use fetch::*;
 pub use filter::*;
 pub use iter::*;
+pub use relation_filter::*;
 pub use state::*;
 
 #[cfg(test)]

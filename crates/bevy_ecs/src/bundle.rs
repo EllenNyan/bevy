@@ -2,7 +2,10 @@ pub use bevy_ecs_macros::Bundle;
 
 use crate::{
     archetype::ComponentStatus,
-    component::{Component, ComponentId, ComponentTicks, Components, StorageType, TypeInfo},
+    component::{
+        Component, ComponentTicks, Components, RelationKindId, RelationKindInfo, StorageType,
+        TypeInfo,
+    },
     entity::Entity,
     storage::{SparseSetIndex, SparseSets, Table},
 };
@@ -117,7 +120,7 @@ impl SparseSetIndex for BundleId {
 
 pub struct BundleInfo {
     pub(crate) id: BundleId,
-    pub(crate) component_ids: Vec<ComponentId>,
+    pub(crate) relationship_ids: Vec<(RelationKindId, Option<Entity>)>,
     pub(crate) storage_types: Vec<StorageType>,
 }
 
@@ -139,31 +142,55 @@ impl BundleInfo {
         // NOTE: get_components calls this closure on each component in "bundle order".
         // bundle_info.component_ids are also in "bundle order"
         let mut bundle_component = 0;
-        bundle.get_components(|component_ptr| {
-            let component_id = *self.component_ids.get_unchecked(bundle_component);
-            match self.storage_types[bundle_component] {
-                StorageType::Table => {
-                    let column = table.get_column_mut(component_id).unwrap();
-                    match bundle_status.get_unchecked(bundle_component) {
-                        ComponentStatus::Added => {
-                            column.initialize(
-                                table_row,
-                                component_ptr,
-                                ComponentTicks::new(change_tick),
-                            );
-                        }
-                        ComponentStatus::Mutated => {
-                            column.replace(table_row, component_ptr, change_tick);
-                        }
-                    }
-                }
-                StorageType::SparseSet => {
-                    let sparse_set = sparse_sets.get_mut(component_id).unwrap();
-                    sparse_set.insert(entity, component_ptr, change_tick);
-                }
-            }
+        bundle.get_components(&mut |component_ptr| {
+            self.write_relationship(
+                sparse_sets,
+                entity,
+                table,
+                table_row,
+                bundle_status,
+                bundle_component,
+                component_ptr,
+                change_tick,
+            );
             bundle_component += 1;
         });
+    }
+
+    #[allow(clippy::too_many_arguments)]
+    pub(crate) unsafe fn write_relationship(
+        &self,
+        sparse_sets: &mut SparseSets,
+        entity: Entity,
+        table: &mut Table,
+        table_row: usize,
+        bundle_status: &[ComponentStatus],
+        relationship_index: usize,
+        component_ptr: *mut u8,
+        change_tick: u32,
+    ) {
+        let (kind_id, target) = self.relationship_ids[relationship_index];
+        match self.storage_types[relationship_index] {
+            StorageType::Table => {
+                let column = table.get_column_mut(kind_id, target).unwrap();
+                match bundle_status[relationship_index] {
+                    ComponentStatus::Added => {
+                        column.initialize(
+                            table_row,
+                            component_ptr,
+                            ComponentTicks::new(change_tick),
+                        );
+                    }
+                    ComponentStatus::Mutated => {
+                        column.replace(table_row, component_ptr, change_tick);
+                    }
+                }
+            }
+            StorageType::SparseSet => {
+                let sparse_set = sparse_sets.get_mut(kind_id, target).unwrap();
+                sparse_set.insert(entity, component_ptr, change_tick);
+            }
+        }
     }
 
     #[inline]
@@ -172,8 +199,8 @@ impl BundleInfo {
     }
 
     #[inline]
-    pub fn components(&self) -> &[ComponentId] {
-        &self.component_ids
+    pub fn components(&self) -> &[(RelationKindId, Option<Entity>)] {
+        &self.relationship_ids
     }
 
     #[inline]
@@ -186,6 +213,7 @@ impl BundleInfo {
 pub struct Bundles {
     bundle_infos: Vec<BundleInfo>,
     bundle_ids: HashMap<TypeId, BundleId>,
+    relationship_bundle_ids: HashMap<(RelationKindId, Option<Entity>), BundleId>,
 }
 
 impl Bundles {
@@ -197,6 +225,38 @@ impl Bundles {
     #[inline]
     pub fn get_id(&self, type_id: TypeId) -> Option<BundleId> {
         self.bundle_ids.get(&type_id).cloned()
+    }
+
+    pub fn get_relationship_bundle_id(
+        &self,
+        relation_kind: RelationKindId,
+        relation_target: Option<Entity>,
+    ) -> Option<BundleId> {
+        self.relationship_bundle_ids
+            .get(&(relation_kind, relation_target))
+            .copied()
+    }
+
+    pub(crate) fn init_relationship_info<'a>(
+        &'a mut self,
+        relation_kind: &RelationKindInfo,
+        relation_target: Option<Entity>,
+    ) -> &'a BundleInfo {
+        let bundle_infos = &mut self.bundle_infos;
+        let id = self
+            .relationship_bundle_ids
+            .entry((relation_kind.id(), relation_target))
+            .or_insert_with(|| {
+                let id = BundleId(bundle_infos.len());
+                let bundle_info = BundleInfo {
+                    id,
+                    relationship_ids: vec![(relation_kind.id(), relation_target)],
+                    storage_types: vec![relation_kind.data_layout().storage_type()],
+                };
+                bundle_infos.push(bundle_info);
+                id
+            });
+        &self.bundle_infos[id.0]
     }
 
     pub(crate) fn init_info<'a, T: Bundle>(
@@ -212,8 +272,7 @@ impl Bundles {
             bundle_infos.push(bundle_info);
             id
         });
-        // SAFE: index either exists, or was initialized
-        unsafe { self.bundle_infos.get_unchecked(id.0) }
+        &self.bundle_infos[id.0]
     }
 }
 
@@ -227,11 +286,9 @@ fn initialize_bundle(
     let mut storage_types = Vec::new();
 
     for type_info in type_info {
-        let component_id = components.get_or_insert_with(type_info.type_id(), || type_info.clone());
-        // SAFE: get_with_type_info ensures info was created
-        let info = unsafe { components.get_info_unchecked(component_id) };
-        component_ids.push(component_id);
-        storage_types.push(info.storage_type());
+        let kind_info = components.get_component_kind_or_insert(type_info.clone().into());
+        component_ids.push((kind_info.id(), None));
+        storage_types.push(kind_info.data_layout().storage_type());
     }
 
     let mut deduped = component_ids.clone();
@@ -243,7 +300,7 @@ fn initialize_bundle(
 
     BundleInfo {
         id,
-        component_ids,
+        relationship_ids: component_ids,
         storage_types,
     }
 }

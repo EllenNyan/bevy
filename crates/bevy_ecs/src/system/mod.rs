@@ -22,7 +22,6 @@ mod tests {
     use crate::{
         archetype::Archetypes,
         bundle::Bundles,
-        component::Components,
         entity::{Entities, Entity},
         query::{Added, Changed, Or, With, Without},
         schedule::{Schedule, Stage, SystemStage},
@@ -380,7 +379,6 @@ mod tests {
         world.spawn().insert_bundle((42, true));
         fn sys(
             archetypes: &Archetypes,
-            components: &Components,
             entities: &Entities,
             bundles: &Bundles,
             query: Query<Entity, With<i32>>,
@@ -397,12 +395,6 @@ mod tests {
                 let bundle_info = bundles.get(bundle_id).unwrap();
                 let mut bundle_components = bundle_info.components().to_vec();
                 bundle_components.sort();
-                for component_id in bundle_components.iter() {
-                    assert!(
-                        components.get_info(*component_id).is_some(),
-                        "every bundle component exists in Components"
-                    );
-                }
                 assert_eq!(
                     bundle_components, archetype_components,
                     "entity's bundle components exactly match entity's archetype components"
@@ -432,9 +424,14 @@ mod tests {
         let conflicts = x.component_access().get_conflicts(y.component_access());
         let b_id = world
             .components()
-            .get_resource_id(TypeId::of::<B>())
-            .unwrap();
-        let d_id = world.components().get_id(TypeId::of::<D>()).unwrap();
+            .get_resource_kind(TypeId::of::<B>())
+            .unwrap()
+            .id();
+        let d_id = world
+            .components()
+            .get_component_kind(TypeId::of::<D>())
+            .unwrap()
+            .id();
         assert_eq!(conflicts, vec![b_id, d_id]);
     }
 

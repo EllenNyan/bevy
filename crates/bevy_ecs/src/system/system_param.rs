@@ -3,7 +3,9 @@ use crate::{
     archetype::{Archetype, Archetypes},
     bundle::Bundles,
     change_detection::Ticks,
-    component::{Component, ComponentId, ComponentTicks, Components},
+    component::{
+        Component, ComponentDescriptor, ComponentTicks, Components, RelationKindId, StorageType,
+    },
     entity::{Entities, Entity},
     query::{
         FilterFetch, FilteredAccess, FilteredAccessSet, QueryState, ReadOnlyFetch, WorldQuery,
@@ -137,7 +139,17 @@ where
     }
 
     fn new_archetype(&mut self, archetype: &Archetype, system_meta: &mut SystemMeta) {
-        self.new_archetype(archetype);
+        for (relation_filter, cache) in self.relation_filter_accesses.iter_mut() {
+            Self::new_archetype(
+                &self.fetch_state,
+                &self.filter_state,
+                &mut self.archetype_component_access,
+                &*relation_filter,
+                cache,
+                archetype,
+            );
+        }
+
         system_meta
             .archetype_component_access
             .extend(&self.archetype_component_access);
@@ -167,8 +179,8 @@ fn assert_component_access_compatibility(
     system_name: &str,
     query_type: &'static str,
     filter_type: &'static str,
-    system_access: &FilteredAccessSet<ComponentId>,
-    current: &FilteredAccess<ComponentId>,
+    system_access: &FilteredAccessSet<RelationKindId>,
+    current: &FilteredAccess<RelationKindId>,
     world: &World,
 ) {
     let mut conflicts = system_access.get_conflicts(current);
@@ -177,7 +189,13 @@ fn assert_component_access_compatibility(
     }
     let conflicting_components = conflicts
         .drain(..)
-        .map(|component_id| world.components.get_info(component_id).unwrap().name())
+        .map(|component_id| {
+            world
+                .components
+                .get_relation_kind(component_id)
+                .data_layout()
+                .name()
+        })
         .collect::<Vec<&str>>();
     let accesses = conflicting_components.join(", ");
     panic!("Query<{}, {}> in system {} accesses component(s) {} in a way that conflicts with a previous system parameter. Allowing this would break Rust's mutability rules. Consider merging conflicting Queries into a QuerySet.",
@@ -247,7 +265,7 @@ impl<'w, T: Component> AsRef<T> for Res<'w, T> {
 
 /// The [`SystemParamState`] of [`Res`].
 pub struct ResState<T> {
-    component_id: ComponentId,
+    component_id: RelationKindId,
     marker: PhantomData<T>,
 }
 
@@ -272,7 +290,7 @@ unsafe impl<T: Component> SystemParamState for ResState<T> {
 
         let resource_archetype = world.archetypes.resource();
         let archetype_component_id = resource_archetype
-            .get_archetype_component_id(component_id)
+            .get_archetype_component_id(component_id, None)
             .unwrap();
         system_meta
             .archetype_component_access
@@ -357,7 +375,7 @@ impl<'a, T: Component> SystemParamFetch<'a> for OptionResState<T> {
 
 /// The [`SystemParamState`] of [`ResMut`].
 pub struct ResMutState<T> {
-    component_id: ComponentId,
+    component_id: RelationKindId,
     marker: PhantomData<T>,
 }
 
@@ -386,7 +404,7 @@ unsafe impl<T: Component> SystemParamState for ResMutState<T> {
 
         let resource_archetype = world.archetypes.resource();
         let archetype_component_id = resource_archetype
-            .get_archetype_component_id(component_id)
+            .get_archetype_component_id(component_id, None)
             .unwrap();
         system_meta
             .archetype_component_access
@@ -616,14 +634,14 @@ impl<'a, T: Component + FromWorld> SystemParamFetch<'a> for LocalState<T> {
 /// ```
 pub struct RemovedComponents<'a, T> {
     world: &'a World,
-    component_id: ComponentId,
+    component_id: RelationKindId,
     marker: PhantomData<T>,
 }
 
 impl<'a, T> RemovedComponents<'a, T> {
     /// Returns an iterator over the entities that had their `T` [`Component`] removed.
     pub fn iter(&self) -> std::iter::Cloned<std::slice::Iter<'_, Entity>> {
-        self.world.removed_with_id(self.component_id)
+        self.world.removed_with_id(self.component_id, None)
     }
 }
 
@@ -632,7 +650,7 @@ unsafe impl<T: Component> ReadOnlySystemParamFetch for RemovedComponentsState<T>
 
 /// The [`SystemParamState`] of [`RemovedComponents`].
 pub struct RemovedComponentsState<T> {
-    component_id: ComponentId,
+    component_id: RelationKindId,
     marker: PhantomData<T>,
 }
 
@@ -647,7 +665,10 @@ unsafe impl<T: Component> SystemParamState for RemovedComponentsState<T> {
 
     fn init(world: &mut World, _system_meta: &mut SystemMeta, _config: Self::Config) -> Self {
         Self {
-            component_id: world.components.get_or_insert_id::<T>(),
+            component_id: world
+                .components
+                .get_component_kind_or_insert(ComponentDescriptor::new::<T>(StorageType::Table))
+                .id(),
             marker: PhantomData,
         }
     }
@@ -727,7 +748,7 @@ impl<'w, T: 'static> Deref for NonSend<'w, T> {
 
 /// The [`SystemParamState`] of [`NonSend`].
 pub struct NonSendState<T> {
-    component_id: ComponentId,
+    component_id: RelationKindId,
     marker: PhantomData<fn() -> T>,
 }
 
@@ -754,7 +775,7 @@ unsafe impl<T: 'static> SystemParamState for NonSendState<T> {
 
         let resource_archetype = world.archetypes.resource();
         let archetype_component_id = resource_archetype
-            .get_archetype_component_id(component_id)
+            .get_archetype_component_id(component_id, None)
             .unwrap();
         system_meta
             .archetype_component_access
@@ -800,7 +821,7 @@ impl<'a, T: 'static> SystemParamFetch<'a> for NonSendState<T> {
 
 /// The [`SystemParamState`] of [`NonSendMut`].
 pub struct NonSendMutState<T> {
-    component_id: ComponentId,
+    component_id: RelationKindId,
     marker: PhantomData<fn() -> T>,
 }
 
@@ -816,7 +837,13 @@ unsafe impl<T: 'static> SystemParamState for NonSendMutState<T> {
     fn init(world: &mut World, system_meta: &mut SystemMeta, _config: Self::Config) -> Self {
         system_meta.set_non_send();
 
-        let component_id = world.components.get_or_insert_non_send_resource_id::<T>();
+        let component_id = world
+            .components
+            .get_resource_kind_or_insert(ComponentDescriptor::new_non_send_sync::<T>(
+                StorageType::Table,
+            ))
+            .id();
+
         let combined_access = system_meta.component_access_set.combined_access_mut();
         if combined_access.has_write(component_id) {
             panic!(
@@ -831,7 +858,7 @@ unsafe impl<T: 'static> SystemParamState for NonSendMutState<T> {
 
         let resource_archetype = world.archetypes.resource();
         let archetype_component_id = resource_archetype
-            .get_archetype_component_id(component_id)
+            .get_archetype_component_id(component_id, None)
             .unwrap();
         system_meta
             .archetype_component_access

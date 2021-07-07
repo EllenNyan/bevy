@@ -402,12 +402,6 @@ macro_rules! self_query_conflict_tests {
 // FIXME(Relationships) components and relations should no longer conflict
 self_query_conflict_tests!(
     mut_and_mut => <(&mut Relation<u32>, &mut Relation<u32>)>
-    mut_and_rel_mut => <(&mut u32, &mut Relation<u32>)>
-    rel_mut_and_mut => <(&mut Relation<u32>, &mut u32)>
-    rel_and_mut => <(&Relation<u32>, &mut u32)>
-    mut_and_rel => <(&mut u32, &Relation<u32>)>
-    rel_mut_and_ref => <(&mut Relation<u32>, &u32)>
-    ref_and_rel_mut => <(&u32, &mut Relation<u32>)>
 );
 
 macro_rules! no_self_query_conflict_tests {
@@ -423,6 +417,12 @@ macro_rules! no_self_query_conflict_tests {
 }
 
 no_self_query_conflict_tests!(
+    rel_and_mut => <(&Relation<u32>, &mut u32)>
+    mut_and_rel => <(&mut u32, &Relation<u32>)>
+    rel_mut_and_ref => <(&mut Relation<u32>, &u32)>
+    ref_and_rel_mut => <(&u32, &mut Relation<u32>)>
+    mut_and_rel_mut => <(&mut u32, &mut Relation<u32>)>
+    rel_mut_and_mut => <(&mut Relation<u32>, &mut u32)>
     rel_and_rel => <(&Relation<u32>, &Relation<u32>)>
     rel_and_diff_rel => <(&Relation<u32>, &Relation<u64>)>
     rel_mut_and_diff_rel_mut => <(&mut Relation<u32>, &mut Relation<u64>)>

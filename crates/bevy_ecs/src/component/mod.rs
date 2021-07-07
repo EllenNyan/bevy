@@ -170,6 +170,7 @@ pub struct Components {
     // use their own hashmap to lookup CustomId -> RelationKindId
     component_indices: HashMap<TypeId, RelationKindId, fxhash::FxBuildHasher>,
     resource_indices: HashMap<TypeId, RelationKindId, fxhash::FxBuildHasher>,
+    relationship_indices: HashMap<TypeId, RelationKindId, fxhash::FxBuildHasher>,
 }
 
 #[derive(Debug, Error)]
@@ -178,14 +179,28 @@ pub enum RelationsError {
     ComponentAlreadyExists { type_id: TypeId, name: String },
     #[error("A resource of type {name:?} ({type_id:?}) already exists")]
     ResourceAlreadyExists { type_id: TypeId, name: String },
+    #[error("A relation of type {name:?} ({type_id:?}) already exists")]
+    RelationshipAlreadyExists { type_id: TypeId, name: String },
 }
 
 impl Components {
-    pub fn new_relation_kind(&mut self, layout: ComponentDescriptor) -> &RelationKindInfo {
-        assert!(layout.type_id.is_none());
+    pub fn new_relationship_kind(
+        &mut self,
+        layout: ComponentDescriptor,
+    ) -> Result<&RelationKindInfo, RelationsError> {
         let id = RelationKindId(self.kinds.len());
+        if self
+            .relationship_indices
+            .contains_key(&layout.type_id().unwrap())
+        {
+            return Err(RelationsError::RelationshipAlreadyExists {
+                type_id: layout.type_id().unwrap(),
+                name: layout.name,
+            });
+        }
+        self.relationship_indices.insert(layout.type_id().unwrap(), id);
         self.kinds.push(RelationKindInfo { data: layout, id });
-        self.kinds.last().unwrap()
+        Ok(self.kinds.last().unwrap())
     }
 
     pub fn new_component_kind(
@@ -238,6 +253,25 @@ impl Components {
     pub fn get_resource_kind(&self, type_id: TypeId) -> Option<&RelationKindInfo> {
         let id = self.resource_indices.get(&type_id).copied()?;
         Some(&self.kinds[id.0])
+    }
+
+    pub fn get_relationship_kind(&self, type_id: TypeId) -> Option<&RelationKindInfo> {
+        let id = self.relationship_indices.get(&type_id).copied()?;
+        Some(&self.kinds[id.0])
+    }
+
+    pub fn get_relationship_kind_or_insert(
+        &mut self,
+        layout: ComponentDescriptor,
+    ) -> &RelationKindInfo {
+        match self
+            .relationship_indices
+            .get(&layout.type_id().unwrap())
+            .copied()
+        {
+            Some(kind) => &self.kinds[kind.0],
+            None => self.new_relationship_kind(layout).unwrap(),
+        }
     }
 
     pub fn get_component_kind_or_insert(

@@ -684,3 +684,36 @@ fn with_filter_raw(storage_type: StorageType) {
         .try_into()
         .unwrap();
 }
+
+#[test]
+pub fn sparse_set_relation_registration() {
+    let mut world = World::new();
+    world
+        .register_relation(ComponentDescriptor::new::<String>(StorageType::SparseSet))
+        .unwrap();
+    let mut q = world.query::<&Relation<String>>();
+    assert!(q.iter(&world).next().is_none());
+
+    let target = world.spawn().id();
+    world
+        .spawn()
+        .insert_relation(String::from("UwowU"), target)
+        .id();
+
+    use std::any::TypeId;
+    let ty_id = world
+        .components
+        .get_relationship_kind(TypeId::of::<String>())
+        .unwrap()
+        .id();
+
+    assert_eq!(
+        world
+            .storages
+            .sparse_sets
+            .get(ty_id, Some(target))
+            .unwrap()
+            .len(),
+        1
+    );
+}

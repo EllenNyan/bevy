@@ -982,7 +982,7 @@ pub(crate) unsafe fn get_relationship_and_ticks_with_type(
     entity: Entity,
     location: EntityLocation,
 ) -> Option<(*mut u8, *mut ComponentTicks)> {
-    let kind_info = world.components.get_component_kind(type_id)?;
+    let kind_info = world.components.get_relationship_kind(type_id)?;
     get_component_and_ticks(world, kind_info.id(), Some(target), entity, location)
 }
 

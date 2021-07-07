@@ -169,6 +169,38 @@ impl World {
         Ok(relation_kind.id())
     }
 
+    /// Registers a new relation using the given [ComponentDescriptor]. Relations do not need to
+    /// be manually registered. This just provides a way to override default configuration.
+    /// Attempting to register a relation with a type that has already been used by [World]
+    /// will result in an error.
+    ///
+    /// The default component storage type can be overridden like this:
+    ///
+    /// ```
+    /// use bevy_ecs::{component::{ComponentDescriptor, StorageType}, world::World};
+    ///
+    /// struct MyRelation {
+    ///   weight: f32,
+    /// }
+    ///
+    /// let mut world = World::new();
+    /// world.register_relation(ComponentDescriptor::new::<MyRelation>(StorageType::SparseSet)).unwrap();
+    /// ```
+    pub fn register_relation(
+        &mut self,
+        descriptor: ComponentDescriptor,
+    ) -> Result<RelationKindId, RelationsError> {
+        let storage_type = descriptor.storage_type();
+        let relation_kind = self.components.new_relationship_kind(descriptor)?;
+
+        // ensure sparse set is created for SparseSet components
+        if storage_type == StorageType::SparseSet {
+            self.storages.sparse_sets.get_or_insert(relation_kind, None);
+        }
+
+        Ok(relation_kind.id())
+    }
+
     /// Retrieves an [EntityRef] that exposes read-only operations for the given `entity`.
     /// This will panic if the `entity` does not exist. Use [World::get_entity] if you want
     /// to check for entity existence instead of implicitly panic-ing.

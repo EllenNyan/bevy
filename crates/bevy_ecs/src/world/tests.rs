@@ -18,7 +18,7 @@ fn relation_spawn_raw(storage_type: StorageType) {
     let mut world = World::new();
 
     world
-        .register_component(ComponentDescriptor::new::<ChildOf>(storage_type))
+        .register_relation(ComponentDescriptor::new::<ChildOf>(storage_type))
         .unwrap();
 
     struct ChildOf;
@@ -50,7 +50,7 @@ fn relation_query_raw(storage_type: StorageType) {
     let mut world = World::new();
 
     world
-        .register_component(ComponentDescriptor::new::<ChildOf>(storage_type))
+        .register_relation(ComponentDescriptor::new::<ChildOf>(storage_type))
         .unwrap();
 
     let parent1 = world.spawn().id();
@@ -103,7 +103,7 @@ fn relation_access_raw(storage_type: StorageType) {
     let mut world = World::new();
 
     world
-        .register_component(ComponentDescriptor::new::<ChildOf>(storage_type))
+        .register_relation(ComponentDescriptor::new::<ChildOf>(storage_type))
         .unwrap();
 
     let random_parent = world.spawn().id();
@@ -241,7 +241,7 @@ fn relation_query_mut_raw(storage_type: StorageType) {
 
     let mut world = World::new();
     world
-        .register_component(ComponentDescriptor::new::<MyRelation>(storage_type))
+        .register_relation(ComponentDescriptor::new::<MyRelation>(storage_type))
         .unwrap();
 
     let target1 = world.spawn().insert(Fragment::<1>).id();
@@ -512,7 +512,7 @@ fn without_filter() {
 fn without_filter_raw(storage_type: StorageType) {
     let mut world = World::new();
     world
-        .register_component(ComponentDescriptor::new::<u32>(storage_type))
+        .register_relation(ComponentDescriptor::new::<u32>(storage_type))
         .unwrap();
 
     struct MyRelation;
@@ -563,7 +563,7 @@ fn relations_dont_yield_components_raw(storage_type: StorageType) {
     let mut world = World::new();
 
     world
-        .register_component(ComponentDescriptor::new::<u32>(storage_type))
+        .register_relation(ComponentDescriptor::new::<u32>(storage_type))
         .unwrap();
 
     let _has_component = world.spawn().insert(10_u32).id();
@@ -603,7 +603,7 @@ fn duplicated_target_filters_raw(storage_type: StorageType) {
     let mut world = World::new();
 
     world
-        .register_component(ComponentDescriptor::new::<u32>(storage_type))
+        .register_relation(ComponentDescriptor::new::<u32>(storage_type))
         .unwrap();
 
     let target = world.spawn().id();
@@ -635,7 +635,7 @@ fn with_filter() {
 fn with_filter_raw(storage_type: StorageType) {
     let mut world = World::new();
     world
-        .register_component(ComponentDescriptor::new::<u32>(storage_type))
+        .register_relation(ComponentDescriptor::new::<u32>(storage_type))
         .unwrap();
 
     let no_relation = world.spawn().insert(10_u32).id();

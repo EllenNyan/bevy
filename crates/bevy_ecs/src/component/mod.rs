@@ -198,7 +198,8 @@ impl Components {
                 name: layout.name,
             });
         }
-        self.relationship_indices.insert(layout.type_id().unwrap(), id);
+        self.relationship_indices
+            .insert(layout.type_id().unwrap(), id);
         self.kinds.push(RelationKindInfo { data: layout, id });
         Ok(self.kinds.last().unwrap())
     }

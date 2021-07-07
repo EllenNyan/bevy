@@ -399,9 +399,10 @@ macro_rules! self_query_conflict_tests {
     };
 }
 
-// FIXME(Relationships) components and relations should no longer conflict
 self_query_conflict_tests!(
     mut_and_mut => <(&mut Relation<u32>, &mut Relation<u32>)>
+    mut_and_ref => <(&mut Relation<u32>, &Relation<u32>)>
+    ref_and_mut => <(&mut Relation<u32>, &Relation<u32>)>
 );
 
 macro_rules! no_self_query_conflict_tests {

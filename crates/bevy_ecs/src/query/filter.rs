@@ -351,7 +351,7 @@ unsafe impl<T: Component> FetchState for WithoutRelationState<T> {
     fn init(world: &mut World) -> Self {
         let kind_info = world
             .components
-            .get_component_kind_or_insert(ComponentDescriptor::new::<T>(StorageType::Table));
+            .get_relationship_kind_or_insert(ComponentDescriptor::new::<T>(StorageType::Table));
 
         Self {
             marker: PhantomData,
@@ -492,7 +492,7 @@ unsafe impl<T: Component> FetchState for WithRelationState<T> {
     fn init(world: &mut World) -> Self {
         let kind_info = world
             .components
-            .get_component_kind_or_insert(ComponentDescriptor::new::<T>(StorageType::Table));
+            .get_relationship_kind_or_insert(ComponentDescriptor::new::<T>(StorageType::Table));
 
         Self {
             marker: PhantomData,

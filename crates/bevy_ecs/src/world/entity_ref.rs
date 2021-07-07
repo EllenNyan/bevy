@@ -51,7 +51,11 @@ impl<'w> EntityRef<'w> {
 
     #[inline]
     pub fn contains_relation<T: 'static>(&self, target: Entity) -> bool {
-        let kind = match self.world.components.get_component_kind(TypeId::of::<T>()) {
+        let kind = match self
+            .world
+            .components
+            .get_relationship_kind(TypeId::of::<T>())
+        {
             Some(kind) => kind,
             None => return false,
         };
@@ -76,14 +80,18 @@ impl<'w> EntityRef<'w> {
 
     #[inline]
     pub fn get<T: Component>(&self) -> Option<&'w T> {
-        self.get_relation::<T>(None)
+        // SAFE: entity location is valid and returned component is of type T
+        unsafe {
+            get_component_with_type(self.world, TypeId::of::<T>(), self.entity, self.location)
+                .map(|value| &*value.cast::<T>())
+        }
     }
 
     #[inline]
-    pub fn get_relation<T: Component>(&self, target: Option<Entity>) -> Option<&'w T> {
+    pub fn get_relation<T: Component>(&self, target: Entity) -> Option<&'w T> {
         // SAFE: entity location is valid and returned component is of type T
         unsafe {
-            get_component_with_type(
+            get_relationship_with_type(
                 self.world,
                 TypeId::of::<T>(),
                 target,
@@ -104,7 +112,15 @@ impl<'w> EntityRef<'w> {
         change_tick: u32,
     ) -> Option<Mut<'w, T>> {
         // SAFETY: Caller
-        self.get_relation_unchecked_mut(None, last_change_tick, change_tick)
+        get_component_and_ticks_with_type(self.world, TypeId::of::<T>(), self.entity, self.location)
+            .map(|(value, ticks)| Mut {
+                value: &mut *value.cast::<T>(),
+                ticks: Ticks {
+                    component_ticks: &mut *ticks,
+                    last_change_tick,
+                    change_tick,
+                },
+            })
     }
 
     /// # Safety
@@ -113,11 +129,11 @@ impl<'w> EntityRef<'w> {
     #[inline]
     pub unsafe fn get_relation_unchecked_mut<T: Component>(
         &self,
-        target: Option<Entity>,
+        target: Entity,
         last_change_tick: u32,
         change_tick: u32,
     ) -> Option<Mut<'w, T>> {
-        get_component_and_ticks_with_type(
+        get_relationship_and_ticks_with_type(
             self.world,
             TypeId::of::<T>(),
             target,
@@ -174,7 +190,11 @@ impl<'w> EntityMut<'w> {
 
     #[inline]
     pub fn contains_relation<T: 'static>(&self, target: Entity) -> bool {
-        let kind = match self.world.components.get_component_kind(TypeId::of::<T>()) {
+        let kind = match self
+            .world
+            .components
+            .get_relationship_kind(TypeId::of::<T>())
+        {
             Some(kind) => kind,
             None => return false,
         };
@@ -199,14 +219,18 @@ impl<'w> EntityMut<'w> {
 
     #[inline]
     pub fn get<T: Component>(&self) -> Option<&'w T> {
-        self.get_relation::<T>(None)
+        // SAFE: entity location is valid and returned component is of type T
+        unsafe {
+            get_component_with_type(self.world, TypeId::of::<T>(), self.entity, self.location)
+                .map(|value| &*value.cast::<T>())
+        }
     }
 
     #[inline]
-    pub fn get_relation<T: Component>(&self, target: Option<Entity>) -> Option<&'w T> {
+    pub fn get_relation<T: Component>(&self, target: Entity) -> Option<&'w T> {
         // SAFE: entity location is valid and returned component is of type T
         unsafe {
-            get_component_with_type(
+            get_relationship_with_type(
                 self.world,
                 TypeId::of::<T>(),
                 target,
@@ -219,15 +243,32 @@ impl<'w> EntityMut<'w> {
 
     #[inline]
     pub fn get_mut<T: Component>(&mut self) -> Option<Mut<'w, T>> {
-        self.get_relation_mut::<T>(None)
-    }
-
-    #[inline]
-    pub fn get_relation_mut<T: Component>(&mut self, target: Option<Entity>) -> Option<Mut<'w, T>> {
         // SAFE: world access is unique, entity location is valid, and returned component is of type
         // T
         unsafe {
             get_component_and_ticks_with_type(
+                self.world,
+                TypeId::of::<T>(),
+                self.entity,
+                self.location,
+            )
+            .map(|(value, ticks)| Mut {
+                value: &mut *value.cast::<T>(),
+                ticks: Ticks {
+                    component_ticks: &mut *ticks,
+                    last_change_tick: self.world.last_change_tick(),
+                    change_tick: self.world.change_tick(),
+                },
+            })
+        }
+    }
+
+    #[inline]
+    pub fn get_relation_mut<T: Component>(&mut self, target: Entity) -> Option<Mut<'w, T>> {
+        // SAFE: world access is unique, entity location is valid, and returned component is of type
+        // T
+        unsafe {
+            get_relationship_and_ticks_with_type(
                 self.world,
                 TypeId::of::<T>(),
                 target,
@@ -250,7 +291,15 @@ impl<'w> EntityMut<'w> {
     /// mutable references to the same component
     #[inline]
     pub unsafe fn get_unchecked_mut<T: Component>(&self) -> Option<Mut<'w, T>> {
-        self.get_relation_unchecked_mut::<T>(None)
+        get_component_and_ticks_with_type(self.world, TypeId::of::<T>(), self.entity, self.location)
+            .map(|(value, ticks)| Mut {
+                value: &mut *value.cast::<T>(),
+                ticks: Ticks {
+                    component_ticks: &mut *ticks,
+                    last_change_tick: self.world.last_change_tick(),
+                    change_tick: self.world.read_change_tick(),
+                },
+            })
     }
 
     /// # Safety
@@ -259,9 +308,9 @@ impl<'w> EntityMut<'w> {
     #[inline]
     pub unsafe fn get_relation_unchecked_mut<T: Component>(
         &self,
-        target: Option<Entity>,
+        target: Entity,
     ) -> Option<Mut<'w, T>> {
-        get_component_and_ticks_with_type(
+        get_relationship_and_ticks_with_type(
             self.world,
             TypeId::of::<T>(),
             target,
@@ -323,7 +372,7 @@ impl<'w> EntityMut<'w> {
             let kind = self
                 .world
                 .components
-                .get_component_kind_or_insert(ComponentDescriptor::new::<T>(StorageType::Table));
+                .get_relationship_kind_or_insert(ComponentDescriptor::new::<T>(StorageType::Table));
             self.world
                 .bundles
                 .init_relationship_info(kind, Some(target))
@@ -517,7 +566,7 @@ impl<'w> EntityMut<'w> {
         let kind = self
             .world
             .components
-            .get_component_kind(TypeId::of::<T>())?;
+            .get_relationship_kind(TypeId::of::<T>())?;
         let bundle_info = self
             .world
             .bundles
@@ -887,32 +936,54 @@ unsafe fn take_component(
     }
 }
 
-/// Set `target` to None if you just want normal components
 /// # Safety
 /// `entity_location` must be within bounds of an archetype that exists.
 unsafe fn get_component_with_type(
     world: &World,
     type_id: TypeId,
-    target: Option<Entity>,
     entity: Entity,
     location: EntityLocation,
 ) -> Option<*mut u8> {
     let kind = world.components.get_component_kind(type_id)?;
-    get_component(world, kind.id(), target, entity, location)
+    get_component(world, kind.id(), None, entity, location)
 }
 
-/// Set `target` to None if you just want normal components
+/// # Safety
+/// `entity_location` must be within bounds of an archetype that exists.
+unsafe fn get_relationship_with_type(
+    world: &World,
+    type_id: TypeId,
+    target: Entity,
+    entity: Entity,
+    location: EntityLocation,
+) -> Option<*mut u8> {
+    let kind = world.components.get_relationship_kind(type_id)?;
+    get_component(world, kind.id(), Some(target), entity, location)
+}
+
 /// # Safety
 /// `entity_location` must be within bounds of an archetype that exists.
 pub(crate) unsafe fn get_component_and_ticks_with_type(
     world: &World,
     type_id: TypeId,
-    target: Option<Entity>,
     entity: Entity,
     location: EntityLocation,
 ) -> Option<(*mut u8, *mut ComponentTicks)> {
     let kind_info = world.components.get_component_kind(type_id)?;
-    get_component_and_ticks(world, kind_info.id(), target, entity, location)
+    get_component_and_ticks(world, kind_info.id(), None, entity, location)
+}
+
+/// # Safety
+/// `entity_location` must be within bounds of an archetype that exists.
+pub(crate) unsafe fn get_relationship_and_ticks_with_type(
+    world: &World,
+    type_id: TypeId,
+    target: Entity,
+    entity: Entity,
+    location: EntityLocation,
+) -> Option<(*mut u8, *mut ComponentTicks)> {
+    let kind_info = world.components.get_component_kind(type_id)?;
+    get_component_and_ticks(world, kind_info.id(), Some(target), entity, location)
 }
 
 fn contains_component_with_type(world: &World, type_id: TypeId, location: EntityLocation) -> bool {

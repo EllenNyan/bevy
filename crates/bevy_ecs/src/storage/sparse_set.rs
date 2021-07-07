@@ -391,6 +391,8 @@ impl SparseSets {
         self.relation_sets.get(relation_kind)
     }
 
+    // FIXME(Relationships): https://discord.com/channels/691052431525675048/749335865876021248/862199702825205760
+    // FIXME(Relationships): Deal with the ability to register components with a target, and relations without one
     pub fn get_or_insert(
         &mut self,
         relation_kind: &RelationKindInfo,

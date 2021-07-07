@@ -190,15 +190,7 @@ impl World {
         &mut self,
         descriptor: ComponentDescriptor,
     ) -> Result<RelationKindId, RelationsError> {
-        let storage_type = descriptor.storage_type();
-        let relation_kind = self.components.new_relationship_kind(descriptor)?;
-
-        // ensure sparse set is created for SparseSet components
-        if storage_type == StorageType::SparseSet {
-            self.storages.sparse_sets.get_or_insert(relation_kind, None);
-        }
-
-        Ok(relation_kind.id())
+        Ok(self.components.new_relationship_kind(descriptor)?.id())
     }
 
     /// Retrieves an [EntityRef] that exposes read-only operations for the given `entity`.

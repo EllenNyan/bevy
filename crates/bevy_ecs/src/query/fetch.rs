@@ -670,7 +670,7 @@ unsafe impl<T: Component> FetchState for ReadRelationState<T> {
         let component_info =
             world
                 .components
-                .component_info_or_insert(ComponentDescriptor::new_targetted::<T>(
+                .component_info_or_insert(ComponentDescriptor::new_targeted::<T>(
                     StorageType::Table,
                     TargetType::Entity,
                 ));
@@ -718,7 +718,7 @@ unsafe impl<T: Component> FetchState for ReadRelationState<T> {
 
     fn matches_table(&self, table: &Table, target_filter: &SmallVec<[Entity; 4]>) -> bool {
         if table
-            .targetted_component_columns
+            .targeted_component_columns
             .get(self.component_id)
             .is_none()
         {
@@ -924,7 +924,7 @@ impl<'w, 's, T: Component> Fetch<'w, 's> for ReadRelationFetch<T> {
         let iter = match target_filters.len() {
             0 => Either::T(
                 table
-                    .targetted_component_columns
+                    .targeted_component_columns
                     .get(self.component_id)
                     .unwrap()
                     .iter(),
@@ -934,7 +934,7 @@ impl<'w, 's, T: Component> Fetch<'w, 's> for ReadRelationFetch<T> {
 
         RelationAccess::Table(TableRelationAccess {
             columns: table
-                .targetted_component_columns
+                .targeted_component_columns
                 .get(self.component_id)
                 .unwrap(),
             current_idx: table_row,
@@ -1006,7 +1006,7 @@ unsafe impl<T: Component> FetchState for WriteRelationState<T> {
 
     fn matches_table(&self, table: &Table, target_filter: &SmallVec<[Entity; 4]>) -> bool {
         if table
-            .targetted_component_columns
+            .targeted_component_columns
             .get(self.component_id)
             .is_none()
         {
@@ -1257,7 +1257,7 @@ impl<'w, 's, T: Component> Fetch<'w, 's> for WriteRelationFetch<T> {
         let iter = match target_filters.len() {
             0 => Either::T(
                 table
-                    .targetted_component_columns
+                    .targeted_component_columns
                     .get(self.component_id)
                     .unwrap()
                     .iter(),
@@ -1268,7 +1268,7 @@ impl<'w, 's, T: Component> Fetch<'w, 's> for WriteRelationFetch<T> {
         RelationAccessMut::Table(TableRelationAccessMut {
             inner: TableRelationAccess {
                 columns: table
-                    .targetted_component_columns
+                    .targeted_component_columns
                     .get(self.component_id)
                     .unwrap(),
                 current_idx: table_row,

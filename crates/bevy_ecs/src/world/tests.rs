@@ -18,7 +18,7 @@ fn relation_spawn_raw(storage_type: StorageType) {
     let mut world = World::new();
 
     world
-        .register_component(ComponentDescriptor::new_targetted::<ChildOf>(
+        .register_component(ComponentDescriptor::new_targeted::<ChildOf>(
             storage_type,
             TargetType::Entity,
         ))
@@ -53,7 +53,7 @@ fn relation_query_raw(storage_type: StorageType) {
     let mut world = World::new();
 
     world
-        .register_component(ComponentDescriptor::new_targetted::<ChildOf>(
+        .register_component(ComponentDescriptor::new_targeted::<ChildOf>(
             storage_type,
             TargetType::Entity,
         ))
@@ -109,7 +109,7 @@ fn relation_access_raw(storage_type: StorageType) {
     let mut world = World::new();
 
     world
-        .register_component(ComponentDescriptor::new_targetted::<ChildOf>(
+        .register_component(ComponentDescriptor::new_targeted::<ChildOf>(
             storage_type,
             TargetType::Entity,
         ))
@@ -250,7 +250,7 @@ fn relation_query_mut_raw(storage_type: StorageType) {
 
     let mut world = World::new();
     world
-        .register_component(ComponentDescriptor::new_targetted::<MyRelation>(
+        .register_component(ComponentDescriptor::new_targeted::<MyRelation>(
             storage_type,
             TargetType::Entity,
         ))
@@ -524,7 +524,7 @@ fn without_filter() {
 fn without_filter_raw(storage_type: StorageType) {
     let mut world = World::new();
     world
-        .register_component(ComponentDescriptor::new_targetted::<u32>(
+        .register_component(ComponentDescriptor::new_targeted::<u32>(
             storage_type,
             TargetType::Entity,
         ))
@@ -578,7 +578,7 @@ fn relations_dont_yield_components_raw(storage_type: StorageType) {
     let mut world = World::new();
 
     world
-        .register_component(ComponentDescriptor::new_targetted::<u32>(
+        .register_component(ComponentDescriptor::new_targeted::<u32>(
             storage_type,
             TargetType::Entity,
         ))
@@ -621,7 +621,7 @@ fn duplicated_target_filters_raw(storage_type: StorageType) {
     let mut world = World::new();
 
     world
-        .register_component(ComponentDescriptor::new_targetted::<u32>(
+        .register_component(ComponentDescriptor::new_targeted::<u32>(
             storage_type,
             TargetType::Entity,
         ))
@@ -656,7 +656,7 @@ fn with_filter() {
 fn with_filter_raw(storage_type: StorageType) {
     let mut world = World::new();
     world
-        .register_component(ComponentDescriptor::new_targetted::<u32>(
+        .register_component(ComponentDescriptor::new_targeted::<u32>(
             storage_type,
             TargetType::Entity,
         ))
@@ -713,7 +713,7 @@ fn with_filter_raw(storage_type: StorageType) {
 pub fn sparse_set_relation_registration() {
     let mut world = World::new();
     world
-        .register_component(ComponentDescriptor::new_targetted::<String>(
+        .register_component(ComponentDescriptor::new_targeted::<String>(
             StorageType::SparseSet,
             TargetType::Entity,
         ))

@@ -59,17 +59,17 @@ pub struct ComponentDescriptor {
 }
 
 impl ComponentDescriptor {
-    // FIXME(Relations) Remove `new` and `new_targetted` methods once we
+    // FIXME(Relations) Remove `new` and `new_targeted` methods once we
     // rebase ontop of derive(Component) so that this is moved to the type system :)
     pub fn new<T: Component>(storage_type: StorageType) -> Self {
-        Self::new_targetted::<T>(storage_type, TargetType::None)
+        Self::new_targeted::<T>(storage_type, TargetType::None)
     }
 
     pub fn default<T: Component>() -> Self {
-        Self::new_targetted::<T>(StorageType::Table, TargetType::None)
+        Self::new_targeted::<T>(StorageType::Table, TargetType::None)
     }
 
-    pub fn new_targetted<T: Component>(storage_type: StorageType, target_type: TargetType) -> Self {
+    pub fn new_targeted<T: Component>(storage_type: StorageType, target_type: TargetType) -> Self {
         Self {
             name: std::any::type_name::<T>().into(),
             storage_type,

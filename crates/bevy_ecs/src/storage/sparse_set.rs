@@ -380,7 +380,7 @@ impl_sparse_set_index!(u8, u16, u32, u64, usize);
 #[derive(Default)]
 pub struct SparseSets {
     component_sets: SparseSet<ComponentId, ComponentSparseSet>,
-    targetted_component_sets: SparseSet<ComponentId, HashMap<Entity, ComponentSparseSet>>,
+    targeted_component_sets: SparseSet<ComponentId, HashMap<Entity, ComponentSparseSet>>,
 }
 
 impl SparseSets {
@@ -388,7 +388,7 @@ impl SparseSets {
         &self,
         component_id: ComponentId,
     ) -> Option<&HashMap<Entity, ComponentSparseSet>> {
-        self.targetted_component_sets.get(component_id)
+        self.targeted_component_sets.get(component_id)
     }
 
     // FIXME(Relationships): https://discord.com/channels/691052431525675048/749335865876021248/862199702825205760
@@ -405,7 +405,7 @@ impl SparseSets {
                     ComponentSparseSet::new(component_info.descriptor(), 64)
                 }),
             Some(target) => self
-                .targetted_component_sets
+                .targeted_component_sets
                 .get_or_insert_with(component_info.id(), HashMap::default)
                 .entry(target)
                 .or_insert_with(|| ComponentSparseSet::new(component_info.descriptor(), 64)),
@@ -418,7 +418,7 @@ impl SparseSets {
         target: Option<Entity>,
     ) -> Option<&ComponentSparseSet> {
         match &target {
-            Some(target) => self.targetted_component_sets.get(component_id)?.get(target),
+            Some(target) => self.targeted_component_sets.get(component_id)?.get(target),
             None => self.component_sets.get(component_id),
         }
     }
@@ -430,7 +430,7 @@ impl SparseSets {
     ) -> Option<&mut ComponentSparseSet> {
         match &target {
             Some(target) => self
-                .targetted_component_sets
+                .targeted_component_sets
                 .get_mut(component_id)?
                 .get_mut(target),
             None => self.component_sets.get_mut(component_id),
@@ -440,8 +440,8 @@ impl SparseSets {
         for set in self.component_sets.values_mut() {
             set.check_change_ticks(change_tick);
         }
-        for targetted_sets in self.targetted_component_sets.values_mut() {
-            for set in targetted_sets.values_mut() {
+        for targeted_sets in self.targeted_component_sets.values_mut() {
+            for set in targeted_sets.values_mut() {
                 set.check_change_ticks(change_tick);
             }
         }

@@ -397,7 +397,7 @@ unsafe impl<T: Component> FetchState for WithoutRelationState<T> {
         // If there are no relations of this kind then the table matches regardless of
         // what relation filters we have
         if table
-            .targetted_component_columns
+            .targeted_component_columns
             .get(self.component_id)
             .is_none()
         {
@@ -531,7 +531,7 @@ unsafe impl<T: Component> FetchState for WithRelationState<T> {
 
     fn matches_table(&self, table: &Table, target_filter: &SmallVec<[Entity; 4]>) -> bool {
         if table
-            .targetted_component_columns
+            .targeted_component_columns
             .get(self.component_id)
             .is_none()
         {

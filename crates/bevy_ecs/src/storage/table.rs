@@ -194,7 +194,7 @@ impl Column {
 
 pub struct Table {
     pub(crate) component_columns: SparseSet<ComponentId, Column>,
-    pub(crate) targetted_component_columns: SparseSet<ComponentId, StableHashMap<Entity, Column>>,
+    pub(crate) targeted_component_columns: SparseSet<ComponentId, StableHashMap<Entity, Column>>,
     entities: Vec<Entity>,
 }
 
@@ -202,7 +202,7 @@ impl Table {
     pub const fn new() -> Table {
         Self {
             component_columns: SparseSet::new(),
-            targetted_component_columns: SparseSet::new(),
+            targeted_component_columns: SparseSet::new(),
             entities: Vec::new(),
         }
     }
@@ -210,7 +210,7 @@ impl Table {
     pub fn with_capacity(capacity: usize, column_capacity: usize) -> Table {
         Self {
             component_columns: SparseSet::with_capacity(column_capacity),
-            targetted_component_columns: SparseSet::with_capacity(column_capacity),
+            targeted_component_columns: SparseSet::with_capacity(column_capacity),
             entities: Vec::with_capacity(capacity),
         }
     }
@@ -222,7 +222,7 @@ impl Table {
 
     fn columns_mut(&mut self) -> impl Iterator<Item = &mut Column> {
         self.component_columns.values_mut().chain(
-            self.targetted_component_columns
+            self.targeted_component_columns
                 .values_mut()
                 .flat_map(|map| map.values_mut()),
         )
@@ -236,7 +236,7 @@ impl Table {
                 Column::with_capacity(component_info, None, capacity),
             ),
             Some(target) => {
-                self.targetted_component_columns
+                self.targeted_component_columns
                     .get_or_insert_with(component_info.id(), StableHashMap::default)
                     .insert(
                         target,
@@ -366,7 +366,7 @@ impl Table {
     pub fn get_column(&self, component_id: ComponentId, target: Option<Entity>) -> Option<&Column> {
         match target {
             Some(target) => self
-                .targetted_component_columns
+                .targeted_component_columns
                 .get(component_id)
                 .and_then(|map| map.get(&target)),
             None => self.component_columns.get(component_id),
@@ -381,7 +381,7 @@ impl Table {
     ) -> Option<&mut Column> {
         match target {
             Some(target) => self
-                .targetted_component_columns
+                .targeted_component_columns
                 .get_mut(component_id)
                 .and_then(|map| map.get_mut(&target)),
             None => self.component_columns.get_mut(component_id),
@@ -392,7 +392,7 @@ impl Table {
     pub fn has_column(&self, component_id: ComponentId, target: Option<Entity>) -> bool {
         match target {
             Some(target) => self
-                .targetted_component_columns
+                .targeted_component_columns
                 .get(component_id)
                 .and_then(|map| map.get(&target))
                 .is_some(),

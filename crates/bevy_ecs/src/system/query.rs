@@ -4,7 +4,7 @@ use crate::{
     prelude::QueryTargetFilters,
     query::{
         Fetch, FilterFetch, QueryCombinationIter, QueryEntityError, QueryIter, QueryState,
-        ReadOnlyFetch, TargetFilter, SpecifiesRelation, WorldQuery,
+        ReadOnlyFetch, SpecifiesRelation, TargetFilter, WorldQuery,
     },
     world::{Mut, World},
 };

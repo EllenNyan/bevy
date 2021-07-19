@@ -92,10 +92,7 @@ impl<Q: WorldQuery, F: WorldQuery> QueryTargetFilters<Q, F> {
 
 pub trait SpecifiesRelation<Kind: Component, Path> {
     type TargetFilter;
-    fn __add_target_filter(
-        entity: TargetFilter<Kind>,
-        target_filter: &mut Self::TargetFilter,
-    );
+    fn __add_target_filter(entity: TargetFilter<Kind>, target_filter: &mut Self::TargetFilter);
 }
 
 pub struct Intrinsic;
@@ -152,10 +149,7 @@ where
     >,
 {
     type TargetFilter = Self;
-    fn __add_target_filter(
-        entity: TargetFilter<Kind>,
-        target_filter: &mut Self::TargetFilter,
-    ) {
+    fn __add_target_filter(entity: TargetFilter<Kind>, target_filter: &mut Self::TargetFilter) {
         Q::__add_target_filter(entity, &mut target_filter.0);
     }
 }
@@ -169,10 +163,7 @@ where
     >,
 {
     type TargetFilter = Self;
-    fn __add_target_filter(
-        entity: TargetFilter<Kind>,
-        target_filter: &mut Self::TargetFilter,
-    ) {
+    fn __add_target_filter(entity: TargetFilter<Kind>, target_filter: &mut Self::TargetFilter) {
         F::__add_target_filter(entity, &mut target_filter.1);
     }
 }

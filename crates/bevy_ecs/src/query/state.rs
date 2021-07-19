@@ -15,7 +15,7 @@ use bevy_tasks::TaskPool;
 use fixedbitset::FixedBitSet;
 use thiserror::Error;
 
-use super::{QueryTargetFilters, TargetFilter, SpecifiesRelation};
+use super::{QueryTargetFilters, SpecifiesRelation, TargetFilter};
 
 pub struct QueryStateTargetFiltersBuilder<'a, 'b, Q: WorldQuery, F: WorldQuery>
 where

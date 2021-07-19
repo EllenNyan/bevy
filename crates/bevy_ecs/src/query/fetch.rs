@@ -148,11 +148,7 @@ pub unsafe trait FetchState: Send + Sync + Sized {
         archetype: &Archetype,
         access: &mut Access<ArchetypeComponentId>,
     );
-    fn matches_archetype(
-        &self,
-        archetype: &Archetype,
-        target_filter: &Self::TargetFilter,
-    ) -> bool;
+    fn matches_archetype(&self, archetype: &Archetype, target_filter: &Self::TargetFilter) -> bool;
     fn matches_table(&self, table: &Table, target_filter: &Self::TargetFilter) -> bool;
     fn deduplicate_targets(target_filter: &mut Self::TargetFilter);
 }

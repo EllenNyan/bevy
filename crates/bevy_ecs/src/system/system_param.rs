@@ -137,12 +137,12 @@ where
     }
 
     fn new_archetype(&mut self, archetype: &Archetype, system_meta: &mut SystemMeta) {
-        for (relation_filter, cache) in self.relation_filter_accesses.iter_mut() {
+        for (target_filter, cache) in self.target_filter_accesses.iter_mut() {
             Self::new_archetype(
                 &self.fetch_state,
                 &self.filter_state,
                 &mut self.archetype_component_access,
-                &*relation_filter,
+                &*target_filter,
                 cache,
                 archetype,
             );

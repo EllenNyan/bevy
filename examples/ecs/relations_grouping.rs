@@ -125,7 +125,7 @@ fn set_group_position(
 ) {
     for &group_entity in group_set.0.iter() {
         let mut iter = bevys
-            .add_filter_relation(RelationFilter::<InGroup>::new().target(group_entity))
+            .new_target_filters(TargetFilter::<InGroup>::new().target(group_entity))
             .apply_filters()
             .iter();
 
@@ -198,7 +198,7 @@ fn move_bevys(
         let GroupPosition(target_pos) = *groups.get_mut(move_to).unwrap().0;
 
         bevys
-            .add_filter_relation(RelationFilter::<InGroup>::new().target(group_entity))
+            .new_target_filters(TargetFilter::<InGroup>::new().target(group_entity))
             .apply_filters()
             .iter_mut()
             .for_each(|(mut transform, target_offset, _)| {

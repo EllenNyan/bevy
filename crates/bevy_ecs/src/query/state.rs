@@ -15,27 +15,28 @@ use bevy_tasks::TaskPool;
 use fixedbitset::FixedBitSet;
 use thiserror::Error;
 
-use super::{QueryRelationFilter, RelationFilter, SpecifiesRelation};
+use super::{QueryTargetFilters, TargetFilter, SpecifiesRelation};
 
-pub struct QueryStateRelationFilterBuilder<'a, 'b, Q: WorldQuery, F: WorldQuery>
+pub struct QueryStateTargetFiltersBuilder<'a, 'b, Q: WorldQuery, F: WorldQuery>
 where
     F::Fetch: FilterFetch,
 {
     state: &'a mut QueryState<Q, F>,
     world: &'b World,
-    filters: QueryRelationFilter<Q, F>,
+    filters: QueryTargetFilters<Q, F>,
 }
 
-impl<'a, 'b, Q: WorldQuery, F: WorldQuery> QueryStateRelationFilterBuilder<'a, 'b, Q, F>
+impl<'a, 'b, Q: WorldQuery, F: WorldQuery> QueryStateTargetFiltersBuilder<'a, 'b, Q, F>
 where
     F::Fetch: FilterFetch,
 {
     /// If filters have already been added for the relation kind they will be merged with
     /// the provided filters.
-    pub fn add_filter_relation<K: Component, Path>(mut self, filter: RelationFilter<K>) -> Self
+    #[must_use = "target filters will be unchanged if you do not call `apply_filters`"]
+    pub fn add_target_filter<K: Component, Path>(mut self, filter: TargetFilter<K>) -> Self
     where
-        QueryRelationFilter<Q, F>:
-            SpecifiesRelation<K, Path, RelationFilter = QueryRelationFilter<Q, F>>,
+        QueryTargetFilters<Q, F>:
+            SpecifiesRelation<K, Path, TargetFilter = QueryTargetFilters<Q, F>>,
     {
         self.filters.add_filter_relation(filter);
         self
@@ -47,7 +48,7 @@ where
             world,
             filters,
         } = self;
-        state.set_relation_filter(world, filters);
+        state.set_target_filters(world, filters);
         state
     }
 }
@@ -70,8 +71,8 @@ where
     pub(crate) archetype_component_access: Access<ArchetypeComponentId>,
     pub(crate) component_access: FilteredAccess<ComponentId>,
 
-    pub(crate) current_relation_filter: QueryRelationFilter<Q, F>,
-    pub(crate) relation_filter_accesses: HashMap<QueryRelationFilter<Q, F>, QueryAccessCache>,
+    pub(crate) current_target_filter: QueryTargetFilters<Q, F>,
+    pub(crate) target_filter_accesses: HashMap<QueryTargetFilters<Q, F>, QueryAccessCache>,
 
     pub(crate) fetch_state: Q::State,
     pub(crate) filter_state: F::State,
@@ -104,12 +105,12 @@ where
             filter_state,
             component_access,
 
-            current_relation_filter: Default::default(),
-            relation_filter_accesses: HashMap::new(),
+            current_target_filter: Default::default(),
+            target_filter_accesses: HashMap::new(),
 
             archetype_component_access: Default::default(),
         };
-        state.set_relation_filter(world, QueryRelationFilter::default());
+        state.set_target_filters(world, QueryTargetFilters::default());
         state.validate_world_and_update_archetypes(world);
         state
     }
@@ -125,13 +126,13 @@ where
     }
 
     pub fn current_query_access_cache(&self) -> &QueryAccessCache {
-        self.relation_filter_accesses
-            .get(&self.current_relation_filter)
+        self.target_filter_accesses
+            .get(&self.current_target_filter)
             .unwrap()
     }
 
-    pub fn clear_relation_filters(&mut self, world: &World) -> &mut Self {
-        self.set_relation_filter(world, Default::default());
+    pub fn clear_target_filters(&mut self, world: &World) -> &mut Self {
+        self.set_target_filters(world, Default::default());
         self
     }
 
@@ -139,38 +140,35 @@ where
     /// place if `apply_filters` is not called on the returned builder struct.
     ///
     /// You should call `clear_filter_relations` if you want to reset filters.
-    #[must_use = "relation filters will be unchanged if you do not call `apply_filters`"]
-    pub fn new_filter_relation<'a, K: Component, Path>(
+    #[must_use = "target filters will be unchanged if you do not call `apply_filters`"]
+    pub fn new_target_filters<'a, K: Component, Path>(
         &mut self,
         world: &'a World,
-        relation_filter: RelationFilter<K>,
-    ) -> QueryStateRelationFilterBuilder<'_, 'a, Q, F>
+        target_filter: TargetFilter<K>,
+    ) -> QueryStateTargetFiltersBuilder<'_, 'a, Q, F>
     where
-        QueryRelationFilter<Q, F>:
-            SpecifiesRelation<K, Path, RelationFilter = QueryRelationFilter<Q, F>>,
+        QueryTargetFilters<Q, F>:
+            SpecifiesRelation<K, Path, TargetFilter = QueryTargetFilters<Q, F>>,
     {
-        QueryStateRelationFilterBuilder {
+        QueryStateTargetFiltersBuilder {
             state: self,
             world,
-            filters: QueryRelationFilter::new(),
+            filters: QueryTargetFilters::new(),
         }
-        .add_filter_relation(relation_filter)
+        .add_target_filter(target_filter)
     }
 
-    /// Overwrites the existing relation filters
-    ///
-    /// You should prefer `new_filter_relation` over this method
-    pub fn set_relation_filter(
+    pub(crate) fn set_target_filters(
         &mut self,
         world: &World,
-        mut relation_filter: QueryRelationFilter<Q, F>,
+        mut target_filter: QueryTargetFilters<Q, F>,
     ) {
         // We deduplicate targets so that `RelationAccess` and `RelationAccessMut`
         // dont yield aliasing borrows when we have two identical target filters
-        relation_filter.deduplicate_targets();
-        self.current_relation_filter = relation_filter.clone();
-        self.relation_filter_accesses
-            .entry(relation_filter)
+        target_filter.deduplicate_targets();
+        self.current_target_filter = target_filter.clone();
+        self.target_filter_accesses
+            .entry(target_filter)
             .or_insert(QueryAccessCache {
                 archetype_generation: ArchetypeGeneration::initial(),
                 matched_table_ids: Vec::new(),
@@ -187,7 +185,7 @@ where
                 std::any::type_name::<Self>());
         }
         let archetypes = world.archetypes();
-        for (relation_filter, cache) in self.relation_filter_accesses.iter_mut() {
+        for (target_filter, cache) in self.target_filter_accesses.iter_mut() {
             let new_generation = archetypes.generation();
             let old_generation = std::mem::replace(&mut cache.archetype_generation, new_generation);
             let archetype_index_range = old_generation.value()..new_generation.value();
@@ -198,7 +196,7 @@ where
                     &self.fetch_state,
                     &self.filter_state,
                     &mut self.archetype_component_access,
-                    &*relation_filter,
+                    &*target_filter,
                     cache,
                     archetype,
                 );
@@ -210,12 +208,12 @@ where
         fetch_state: &Q::State,
         filter_state: &F::State,
         access: &mut Access<ArchetypeComponentId>,
-        relation_filter: &QueryRelationFilter<Q, F>,
+        target_filter: &QueryTargetFilters<Q, F>,
         cache: &mut QueryAccessCache,
         archetype: &Archetype,
     ) {
-        if fetch_state.matches_archetype(archetype, &relation_filter.0)
-            && filter_state.matches_archetype(archetype, &relation_filter.1)
+        if fetch_state.matches_archetype(archetype, &target_filter.0)
+            && filter_state.matches_archetype(archetype, &target_filter.1)
         {
             fetch_state.update_archetype_component_access(archetype, access);
             filter_state.update_archetype_component_access(archetype, access);
@@ -302,27 +300,27 @@ where
         let mut fetch = <Q::Fetch as Fetch>::init(
             world,
             &self.fetch_state,
-            &self.current_relation_filter.0,
+            &self.current_target_filter.0,
             last_change_tick,
             change_tick,
         );
         let mut filter = <F::Fetch as Fetch>::init(
             world,
             &self.filter_state,
-            &self.current_relation_filter.1,
+            &self.current_target_filter.1,
             last_change_tick,
             change_tick,
         );
 
         fetch.set_archetype(
             &self.fetch_state,
-            &self.current_relation_filter.0,
+            &self.current_target_filter.0,
             archetype,
             &world.storages().tables,
         );
         filter.set_archetype(
             &self.filter_state,
-            &self.current_relation_filter.1,
+            &self.current_target_filter.1,
             archetype,
             &world.storages().tables,
         );
@@ -545,14 +543,14 @@ where
         let mut fetch = <Q::Fetch as Fetch>::init(
             world,
             &self.fetch_state,
-            &self.current_relation_filter.0,
+            &self.current_target_filter.0,
             last_change_tick,
             change_tick,
         );
         let mut filter = <F::Fetch as Fetch>::init(
             world,
             &self.filter_state,
-            &self.current_relation_filter.1,
+            &self.current_target_filter.1,
             last_change_tick,
             change_tick,
         );
@@ -560,8 +558,8 @@ where
             let tables = &world.storages().tables;
             for table_id in self.current_query_access_cache().matched_table_ids.iter() {
                 let table = &tables[*table_id];
-                fetch.set_table(&self.fetch_state, &self.current_relation_filter.0, table);
-                filter.set_table(&self.filter_state, &self.current_relation_filter.1, table);
+                fetch.set_table(&self.fetch_state, &self.current_target_filter.0, table);
+                filter.set_table(&self.filter_state, &self.current_target_filter.1, table);
 
                 for table_index in 0..table.len() {
                     if !filter.table_filter_fetch(table_index) {
@@ -582,13 +580,13 @@ where
                 let archetype = &archetypes[*archetype_id];
                 fetch.set_archetype(
                     &self.fetch_state,
-                    &self.current_relation_filter.0,
+                    &self.current_target_filter.0,
                     archetype,
                     tables,
                 );
                 filter.set_archetype(
                     &self.filter_state,
-                    &self.current_relation_filter.1,
+                    &self.current_target_filter.1,
                     archetype,
                     tables,
                 );
@@ -624,14 +622,14 @@ where
             let fetch = <Q::Fetch as Fetch>::init(
                 world,
                 &self.fetch_state,
-                &self.current_relation_filter.0,
+                &self.current_target_filter.0,
                 last_change_tick,
                 change_tick,
             );
             let filter = <F::Fetch as Fetch>::init(
                 world,
                 &self.filter_state,
-                &self.current_relation_filter.1,
+                &self.current_target_filter.1,
                 last_change_tick,
                 change_tick,
             );
@@ -647,14 +645,14 @@ where
                             let mut fetch = <Q::Fetch as Fetch>::init(
                                 world,
                                 &self.fetch_state,
-                                &self.current_relation_filter.0,
+                                &self.current_target_filter.0,
                                 last_change_tick,
                                 change_tick,
                             );
                             let mut filter = <F::Fetch as Fetch>::init(
                                 world,
                                 &self.filter_state,
-                                &self.current_relation_filter.1,
+                                &self.current_target_filter.1,
                                 last_change_tick,
                                 change_tick,
                             );
@@ -662,12 +660,12 @@ where
                             let table = &tables[*table_id];
                             fetch.set_table(
                                 &self.fetch_state,
-                                &self.current_relation_filter.0,
+                                &self.current_target_filter.0,
                                 table,
                             );
                             filter.set_table(
                                 &self.filter_state,
-                                &self.current_relation_filter.1,
+                                &self.current_target_filter.1,
                                 table,
                             );
                             let len = batch_size.min(table.len() - offset);
@@ -697,14 +695,14 @@ where
                             let mut fetch = <Q::Fetch as Fetch>::init(
                                 world,
                                 &self.fetch_state,
-                                &self.current_relation_filter.0,
+                                &self.current_target_filter.0,
                                 last_change_tick,
                                 change_tick,
                             );
                             let mut filter = <F::Fetch as Fetch>::init(
                                 world,
                                 &self.filter_state,
-                                &self.current_relation_filter.1,
+                                &self.current_target_filter.1,
                                 last_change_tick,
                                 change_tick,
                             );
@@ -712,13 +710,13 @@ where
                             let archetype = &world.archetypes[*archetype_id];
                             fetch.set_archetype(
                                 &self.fetch_state,
-                                &self.current_relation_filter.0,
+                                &self.current_target_filter.0,
                                 archetype,
                                 tables,
                             );
                             filter.set_archetype(
                                 &self.filter_state,
-                                &self.current_relation_filter.1,
+                                &self.current_target_filter.1,
                                 archetype,
                                 tables,
                             );

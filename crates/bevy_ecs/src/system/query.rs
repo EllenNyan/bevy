@@ -1,10 +1,10 @@
 use crate::{
     component::Component,
     entity::Entity,
-    prelude::QueryRelationFilter,
+    prelude::QueryTargetFilters,
     query::{
         Fetch, FilterFetch, QueryCombinationIter, QueryEntityError, QueryIter, QueryState,
-        ReadOnlyFetch, RelationFilter, SpecifiesRelation, WorldQuery,
+        ReadOnlyFetch, TargetFilter, SpecifiesRelation, WorldQuery,
     },
     world::{Mut, World},
 };
@@ -557,31 +557,37 @@ where
         self.state
             .is_empty(self.world, self.last_change_tick, self.change_tick)
     }
+
+    pub fn clear_target_filters(&mut self) -> &mut Self {
+        self.set_target_filters(Default::default());
+        self
+    }
+
     /// Starts building a new set of relation filters for the query, changes will not take
     /// place if `apply_filters` is not called on the returned builder struct.
     ///
     /// You should call `clear_filter_relations` if you want to reset filters.
     #[must_use = "relation filters will be unchanged if you do not call `apply_filters`"]
-    pub fn add_filter_relation<K: Component, Path>(
+    pub fn new_target_filters<K: Component, Path>(
         &mut self,
-        filter: RelationFilter<K>,
-    ) -> QueryRelationFilterBuilder<'_, 'w, Q, F>
+        filter: TargetFilter<K>,
+    ) -> QueryTargetFiltersBuilder<'_, 'w, Q, F>
     where
-        QueryRelationFilter<Q, F>:
-            SpecifiesRelation<K, Path, RelationFilter = QueryRelationFilter<Q, F>>,
+        QueryTargetFilters<Q, F>:
+            SpecifiesRelation<K, Path, TargetFilter = QueryTargetFilters<Q, F>>,
     {
-        QueryRelationFilterBuilder {
+        QueryTargetFiltersBuilder {
             query: self,
-            filters: QueryRelationFilter::new(),
+            filters: QueryTargetFilters::new(),
         }
-        .add_filter_relation(filter)
+        .add_target_filter(filter)
     }
 
     /// Overwrites current relation filters with the provided relation filters
     ///
     /// You should prefer `new_filter_relation` over this method
-    pub fn set_relation_filter(&mut self, relation_filter: QueryRelationFilter<Q, F>) -> &mut Self {
-        self.state.set_relation_filter(&self.world, relation_filter);
+    fn set_target_filters(&mut self, target_filter: QueryTargetFilters<Q, F>) -> &mut Self {
+        self.state.set_target_filters(&self.world, target_filter);
         self
     }
 }
@@ -591,28 +597,29 @@ where
     F::Fetch: FilterFetch,
 {
     fn drop(&mut self) {
-        self.set_relation_filter(QueryRelationFilter::new());
+        self.set_target_filters(QueryTargetFilters::new());
     }
 }
 
-pub struct QueryRelationFilterBuilder<'a, 'b: 'a, Q: WorldQuery + 'static, F: WorldQuery + 'static>
+pub struct QueryTargetFiltersBuilder<'a, 'b: 'a, Q: WorldQuery + 'static, F: WorldQuery + 'static>
 where
     F::Fetch: FilterFetch,
 {
     query: &'a mut Query<'b, Q, F>,
-    filters: QueryRelationFilter<Q, F>,
+    filters: QueryTargetFilters<Q, F>,
 }
 
-impl<'a, 'b: 'a, Q: WorldQuery, F: WorldQuery> QueryRelationFilterBuilder<'a, 'b, Q, F>
+impl<'a, 'b: 'a, Q: WorldQuery, F: WorldQuery> QueryTargetFiltersBuilder<'a, 'b, Q, F>
 where
     F::Fetch: FilterFetch,
 {
     /// If filters have already been added for the relation kind they will be merged with
     /// the provided filters.
-    pub fn add_filter_relation<K: Component, Path>(mut self, filter: RelationFilter<K>) -> Self
+    #[must_use = "target filters will be unchanged if you do not call `apply_filters`"]
+    pub fn add_target_filter<K: Component, Path>(mut self, filter: TargetFilter<K>) -> Self
     where
-        QueryRelationFilter<Q, F>:
-            SpecifiesRelation<K, Path, RelationFilter = QueryRelationFilter<Q, F>>,
+        QueryTargetFilters<Q, F>:
+            SpecifiesRelation<K, Path, TargetFilter = QueryTargetFilters<Q, F>>,
     {
         self.filters.add_filter_relation(filter);
         self
@@ -620,7 +627,7 @@ where
 
     pub fn apply_filters(self) -> &'a mut Query<'b, Q, F> {
         let Self { query, filters } = self;
-        query.state.set_relation_filter(query.world, filters);
+        query.state.set_target_filters(query.world, filters);
         query
     }
 }

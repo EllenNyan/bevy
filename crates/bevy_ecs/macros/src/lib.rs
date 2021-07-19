@@ -258,12 +258,12 @@ pub fn impl_query_set(_input: TokenStream) -> TokenStream {
                 fn new_archetype(&mut self, archetype: &Archetype, system_meta: &mut SystemMeta) {
                     let (#(#query,)*) = &mut self.0;
                     #(
-                        for (relation_filter, cache) in #query.relation_filter_accesses.iter_mut() {
+                        for (target_filter, cache) in #query.target_filter_accesses.iter_mut() {
                             QueryState::<#query, #filter>::new_archetype(
                                 &#query.fetch_state,
                                 &#query.filter_state,
                                 &mut #query.archetype_component_access,
-                                &*relation_filter,
+                                &*target_filter,
                                 cache,
                                 archetype
                             );

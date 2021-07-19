@@ -48,14 +48,14 @@ where
         let fetch = <Q::Fetch as Fetch>::init(
             world,
             &query_state.fetch_state,
-            &query_state.current_relation_filter.0,
+            &query_state.current_target_filter.0,
             last_change_tick,
             change_tick,
         );
         let filter = <F::Fetch as Fetch>::init(
             world,
             &query_state.filter_state,
-            &query_state.current_relation_filter.1,
+            &query_state.current_target_filter.1,
             last_change_tick,
             change_tick,
         );
@@ -93,7 +93,7 @@ where
 
                         self.filter.set_table(
                             &self.query_state.filter_state,
-                            &self.query_state.current_relation_filter.1,
+                            &self.query_state.current_target_filter.1,
                             table,
                         );
                         self.current_len = table.len();
@@ -118,7 +118,7 @@ where
                         let archetype = &self.archetypes[*archetype_id];
                         self.filter.set_archetype(
                             &self.query_state.filter_state,
-                            &self.query_state.current_relation_filter.1,
+                            &self.query_state.current_target_filter.1,
                             archetype,
                             self.tables,
                         );
@@ -158,12 +158,12 @@ where
                         let table = &self.tables[*table_id];
                         self.fetch.set_table(
                             &self.query_state.fetch_state,
-                            &self.query_state.current_relation_filter.0,
+                            &self.query_state.current_target_filter.0,
                             table,
                         );
                         self.filter.set_table(
                             &self.query_state.filter_state,
-                            &self.query_state.current_relation_filter.1,
+                            &self.query_state.current_target_filter.1,
                             table,
                         );
                         self.current_len = table.len();
@@ -187,13 +187,13 @@ where
                         let archetype = &self.archetypes[*archetype_id];
                         self.fetch.set_archetype(
                             &self.query_state.fetch_state,
-                            &self.query_state.current_relation_filter.0,
+                            &self.query_state.current_target_filter.0,
                             archetype,
                             self.tables,
                         );
                         self.filter.set_archetype(
                             &self.query_state.filter_state,
-                            &self.query_state.current_relation_filter.1,
+                            &self.query_state.current_target_filter.1,
                             archetype,
                             self.tables,
                         );
@@ -483,14 +483,14 @@ where
         let fetch = <Q::Fetch as Fetch>::init(
             world,
             &query_state.fetch_state,
-            &query_state.current_relation_filter.0,
+            &query_state.current_target_filter.0,
             last_change_tick,
             change_tick,
         );
         let filter = <F::Fetch as Fetch>::init(
             world,
             &query_state.filter_state,
-            &query_state.current_relation_filter.1,
+            &query_state.current_target_filter.1,
             last_change_tick,
             change_tick,
         );
@@ -538,12 +538,12 @@ where
                     let table = &tables[*table_id];
                     self.fetch.set_table(
                         &query_state.fetch_state,
-                        &query_state.current_relation_filter.0,
+                        &query_state.current_target_filter.0,
                         table,
                     );
                     self.filter.set_table(
                         &query_state.filter_state,
-                        &query_state.current_relation_filter.1,
+                        &query_state.current_target_filter.1,
                         table,
                     );
                     self.current_len = table.len();
@@ -568,13 +568,13 @@ where
                     let archetype = &archetypes[*archetype_id];
                     self.fetch.set_archetype(
                         &query_state.fetch_state,
-                        &query_state.current_relation_filter.0,
+                        &query_state.current_target_filter.0,
                         archetype,
                         tables,
                     );
                     self.filter.set_archetype(
                         &query_state.filter_state,
-                        &query_state.current_relation_filter.1,
+                        &query_state.current_target_filter.1,
                         archetype,
                         tables,
                     );

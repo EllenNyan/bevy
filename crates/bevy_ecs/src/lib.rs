@@ -23,8 +23,8 @@ pub mod prelude {
         entity::Entity,
         event::{EventReader, EventWriter},
         query::{
-            Added, ChangeTrackers, Changed, InData, InFilter, InTuple, Or, QueryRelationFilter,
-            QueryState, Relation, RelationFilter, With, WithBundle, Without,
+            Added, ChangeTrackers, Changed, InData, InFilter, InTuple, Or, QueryTargetFilters,
+            QueryState, Relation, TargetFilter, With, WithBundle, Without,
         },
         schedule::{
             AmbiguitySetLabel, ExclusiveSystemDescriptorCoercion, ParallelSystemDescriptorCoercion,

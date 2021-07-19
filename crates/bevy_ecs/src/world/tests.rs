@@ -4,7 +4,7 @@ use std::convert::TryInto;
 
 use crate::{
     component::{ComponentDescriptor, StorageType, TargetType},
-    query::RelationFilter,
+    query::TargetFilter,
 };
 use crate::{prelude::*, query::RelationAccess};
 
@@ -71,23 +71,23 @@ fn relation_query_raw(storage_type: StorageType) {
     assert!(matches!(iter.next(), None));
 
     query
-        .new_filter_relation(&world, RelationFilter::<ChildOf>::new().target(parent1))
+        .new_target_filters(&world, TargetFilter::<ChildOf>::new().target(parent1))
         .apply_filters();
     let mut iter = query.iter_mut(&mut world);
     assert!(iter.next().unwrap().0 == child1);
     assert!(matches!(iter.next(), None));
 
     query
-        .new_filter_relation(&world, RelationFilter::<ChildOf>::new().target(parent2))
+        .new_target_filters(&world, TargetFilter::<ChildOf>::new().target(parent2))
         .apply_filters();
     let mut iter = query.iter_mut(&mut world);
     assert!(iter.next().unwrap().0 == child2);
     assert!(matches!(iter.next(), None));
 
     query
-        .new_filter_relation(
+        .new_target_filters(
             &world,
-            RelationFilter::<ChildOf>::new()
+            TargetFilter::<ChildOf>::new()
                 .target(parent1)
                 .target(parent2),
         )
@@ -152,7 +152,7 @@ fn relation_access_raw(storage_type: StorageType) {
     let mut query = world.query::<(Entity, &Relation<ChildOf>)>();
 
     query
-        .new_filter_relation(&world, RelationFilter::<ChildOf>::new().target(parent1))
+        .new_target_filters(&world, TargetFilter::<ChildOf>::new().target(parent1))
         .apply_filters();
     let mut iter = query.iter(&world);
     let (child, mut accessor) = iter.next().unwrap();
@@ -170,7 +170,7 @@ fn relation_access_raw(storage_type: StorageType) {
     assert!(matches!(iter.next(), None));
 
     query
-        .new_filter_relation(&world, RelationFilter::<ChildOf>::new().target(parent2))
+        .new_target_filters(&world, TargetFilter::<ChildOf>::new().target(parent2))
         .apply_filters();
     let mut iter = query.iter(&world);
     let (child, mut accessor) = iter.next().unwrap();
@@ -187,7 +187,7 @@ fn relation_access_raw(storage_type: StorageType) {
     assert!(matches!(accessor.next(), None));
     assert!(matches!(iter.next(), None));
 
-    query.set_relation_filter(&world, QueryRelationFilter::new());
+    query.clear_target_filters(&world);
     let mut iter = query.iter(&world);
     //
     let (child, mut accessor) = iter.next().unwrap();
@@ -285,7 +285,7 @@ fn relation_query_mut_raw(storage_type: StorageType) {
     let mut query = world.query::<(Entity, &mut Relation<MyRelation>, &&str)>();
 
     query
-        .new_filter_relation(&world, RelationFilter::<MyRelation>::new().target(target2))
+        .new_target_filters(&world, TargetFilter::<MyRelation>::new().target(target2))
         .apply_filters();
     for (_, mut accessor, _) in query.iter_mut(&mut world) {
         let (_, mut rel) = accessor.single();
@@ -294,9 +294,9 @@ fn relation_query_mut_raw(storage_type: StorageType) {
     }
 
     query
-        .new_filter_relation(
+        .new_target_filters(
             &world,
-            RelationFilter::<MyRelation>::new()
+            TargetFilter::<MyRelation>::new()
                 .target(target1)
                 .target(target2),
         )
@@ -326,7 +326,7 @@ fn relation_query_mut_raw(storage_type: StorageType) {
     }
     assert!(was_targeter1 && was_targeter2);
 
-    query.clear_relation_filters(&world);
+    query.clear_target_filters(&world);
     for (_, accessor, _) in query.iter_mut(&mut world) {
         for (_, mut rel) in accessor {
             rel.0 = !rel.0;
@@ -458,7 +458,7 @@ fn compiles() {
     let mut query = world.query::<&u32>();
 
     let borrows = query.iter(&world).collect::<Vec<_>>();
-    query.clear_relation_filters(&world);
+    query.clear_target_filters(&world);
     let _borrows2 = query.iter(&world).collect::<Vec<_>>();
     dbg!(borrows);
 }
@@ -470,7 +470,7 @@ use bevy_ecs::prelude::*;
 let mut world = World::new();
 let mut query = world.query::<&Relation<u32>>();
 let _borrows = query.iter(&world).collect::<Vec<_>>();
-query.clear_relation_filters(&world);
+query.clear_target_filters(&world);
 let _borrows2 = query.iter(&world).collect::<Vec<_>>();
 drop(_borrows); // If this doesn't fail to compile we have unsoundness - Boxy
 ```
@@ -484,9 +484,9 @@ fn explicit_path() {
     let target = world.spawn().id();
 
     query
-        .new_filter_relation::<u32, InData<InTuple<_, 0>>>(
+        .new_target_filters::<u32, InData<InTuple<_, 0>>>(
             &world,
-            RelationFilter::new().target(target),
+            TargetFilter::new().target(target),
         )
         .apply_filters();
 }
@@ -498,7 +498,7 @@ fn foo() {
     let target = world.spawn().id();
 
     query
-        .new_filter_relation(&world, RelationFilter::<u32>::new().target(target))
+        .new_target_filters(&world, TargetFilter::<u32>::new().target(target))
         .apply_filters()
         .for_each(&world, |_| ())
 }
@@ -555,7 +555,7 @@ fn without_filter_raw(storage_type: StorageType) {
 
     let data = world
         .query_filtered::<(Entity, &String), Without<Relation<MyRelation>>>()
-        .new_filter_relation(&world, RelationFilter::<MyRelation>::new().target(target1))
+        .new_target_filters(&world, TargetFilter::<MyRelation>::new().target(target1))
         .apply_filters()
         .iter(&world)
         .collect::<Vec<(Entity, &String)>>();
@@ -632,9 +632,9 @@ fn duplicated_target_filters_raw(storage_type: StorageType) {
 
     let mut q = world.query::<&Relation<u32>>();
     let [relations]: [RelationAccess<_>; 1] = q
-        .new_filter_relation(
+        .new_target_filters(
             &world,
-            RelationFilter::<u32>::new().target(target).target(target),
+            TargetFilter::<u32>::new().target(target).target(target),
         )
         .apply_filters()
         .iter(&world)
@@ -683,7 +683,7 @@ fn with_filter_raw(storage_type: StorageType) {
     assert_eq!(e2, has_both);
     assert_eq!(e3, many_relations);
     let [e1, e2]: [Entity; 2] = q
-        .new_filter_relation(&world, RelationFilter::<u32>::new().target(target1))
+        .new_target_filters(&world, TargetFilter::<u32>::new().target(target1))
         .apply_filters()
         .iter(&world)
         .collect::<Vec<_>>()
@@ -692,7 +692,7 @@ fn with_filter_raw(storage_type: StorageType) {
     assert_eq!(e1, has_relation);
     assert_eq!(e2, many_relations);
     let [e1, e2]: [Entity; 2] = q
-        .new_filter_relation(&world, RelationFilter::<u32>::new().target(target2))
+        .new_target_filters(&world, TargetFilter::<u32>::new().target(target2))
         .apply_filters()
         .iter(&world)
         .collect::<Vec<_>>()
@@ -701,7 +701,7 @@ fn with_filter_raw(storage_type: StorageType) {
     assert_eq!(e1, has_both);
     assert_eq!(e2, many_relations);
     let []: [Entity; 0] = q
-        .new_filter_relation(&world, RelationFilter::<u32>::new().target(no_relation))
+        .new_target_filters(&world, TargetFilter::<u32>::new().target(no_relation))
         .apply_filters()
         .iter(&world)
         .collect::<Vec<_>>()
